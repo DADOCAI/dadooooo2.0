@@ -15,6 +15,8 @@ interface AuthContextType {
   setShowRegisterDialog: (show: boolean) => void;
   // 注册（保留接口，当前改用魔法链接）
   register: (email: string, password: string) => void;
+  prefillEmail?: string;
+  setPrefillEmail: (email?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userEmail, setUserEmail] = useState<string | undefined>(undefined);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
+  const [prefillEmail, setPrefillEmail] = useState<string | undefined>(undefined);
 
   // Persisted session
   const SESSION_KEY = "dado.auth.session";
@@ -34,11 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const TEST_PASSWORD = "2434544181";
 
   const login = async (email: string, password: string) => {
-    // 保留账号密码登录接口（目前不启用）
-    console.log('password login not used, prefer magic link');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { console.error('supabase login error', error); setIsLoggedIn(false); return; }
-    console.log('supabase login ok', data);
     setIsLoggedIn(true);
     setUserEmail(email);
     setShowLoginDialog(false);
@@ -49,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   };
 
-  // 发送魔法链接到用户邮箱
   const sendMagicLink = async (email: string) => {
     console.log('supabase magic link start', { email });
     // 中文注释：优先通过云端端点发送邮件登录链接；失败时给出错误提示，避免频繁重试触发 429
@@ -75,8 +74,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (email: string, password: string) => {
-    // 保留注册接口（当前改用魔法链接登录）
-    return sendMagicLink(email);
+    console.log('supabase signup start', { email });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin }
+    });
+    if (error) { console.error('supabase signup error', error); return; }
+    console.log('supabase signup ok', data);
+    try {
+      localStorage.setItem('dado.auth.registrationFlow', 'true');
+      localStorage.setItem('dado.auth.registrationEmail', email);
+    } catch {}
   };
 
   const logout = async () => {
@@ -99,6 +108,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const email = session?.user?.email;
       if (email) { setIsLoggedIn(true); setUserEmail(email); }
       else { setIsLoggedIn(false); setUserEmail(undefined); }
+      try {
+        const rf = localStorage.getItem('dado.auth.registrationFlow');
+        const re = localStorage.getItem('dado.auth.registrationEmail') || undefined;
+        if (rf === 'true') {
+          localStorage.removeItem('dado.auth.registrationFlow');
+          setPrefillEmail(re);
+          setShowRegisterDialog(false);
+          setShowLoginDialog(true);
+          // 如果自动登录了，则退出并返回登录页以便用户使用密码登录
+          if (session) {
+            supabase.auth.signOut().catch(()=>{});
+          }
+        }
+      } catch {}
     });
     return () => { sub?.subscription.unsubscribe(); };
   }, []);
@@ -115,7 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setShowLoginDialog,
         showRegisterDialog,
         setShowRegisterDialog,
-        register
+        register,
+        prefillEmail,
+        setPrefillEmail
       }}
     >
       {children}

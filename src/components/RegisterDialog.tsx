@@ -6,7 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import logo from 'figma:asset/e5c375aeb9d5459e76d1f4b4579b4d2ffbb0055e.png';
 
 export function RegisterDialog() {
-  const { showRegisterDialog, setShowRegisterDialog, sendMagicLink, setShowLoginDialog } = useAuth();
+  const { showRegisterDialog, setShowRegisterDialog, register, setShowLoginDialog, setPrefillEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -16,8 +16,10 @@ export function RegisterDialog() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage("");
-    await sendMagicLink(email);
-    setMessage("登录链接已发送，请到邮箱点击链接完成登录");
+    if (password !== confirmPassword) { setMessage("两次密码不一致"); return; }
+    await register(email, password);
+    try { setPrefillEmail(email); } catch {}
+    setMessage("验证链接已发送，请到邮箱点击链接完成注册");
   };
 
   return (
@@ -90,13 +92,13 @@ export function RegisterDialog() {
               />
             </div>
 
-            {/* 改为发送魔法链接 */}
+            {/* 发送验证链接 */}
             <button
               type="submit"
               className={`w-full bg-white border border-blue-500 text-blue-500 py-3 hover:bg-blue-50 transition-colors flex items-center justify-center`}
               style={{ fontFamily: "'Noto Sans SC', sans-serif" }}
             >
-              发送登录链接
+              发送验证链接
             </button>
 
             {message && (

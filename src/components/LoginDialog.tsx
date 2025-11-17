@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -6,24 +6,18 @@ import { useAuth } from "../contexts/AuthContext";
 import logo from 'figma:asset/e5c375aeb9d5459e76d1f4b4579b4d2ffbb0055e.png';
 
 export function LoginDialog() {
-  const { showLoginDialog, setShowLoginDialog, sendMagicLink, setShowRegisterDialog } = useAuth();
+  const { showLoginDialog, setShowLoginDialog, login, setShowRegisterDialog, prefillEmail, setPrefillEmail } = useAuth();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
-  const [cooldown, setCooldown] = useState(0);
 
-  // 中文注释：点击“发送登录链接”后，调用 Supabase 魔法链接登录
+  useEffect(() => { if (prefillEmail) { setEmail(prefillEmail); setPrefillEmail(undefined); } }, [prefillEmail, setPrefillEmail]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cooldown > 0) return;
     setMessage("");
-    await sendMagicLink(email);
-    setMessage("登录链接已发送，请到邮箱点击链接完成登录");
-    setCooldown(60);
+    await login(email, password);
   };
-
-  if (cooldown > 0) {
-    setTimeout(() => setCooldown((s) => s - 1), 1000);
-  }
 
   return (
     <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
@@ -64,16 +58,28 @@ export function LoginDialog() {
               />
             </div>
 
-            {/* 这里不再使用密码，保留结构方便以后扩展（不显示） */}
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-black">
+                密码
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="border-blue-500 rounded-none focus-visible:ring-blue-500 bg-white"
+              />
+            </div>
 
-            {/* 登录按钮：发送魔法链接到邮箱 */}
+            {/* 登录按钮：账号密码登录 */}
             <button
               type="submit"
-              disabled={cooldown > 0}
-              className={`w-full bg-white border border-blue-500 text-blue-500 py-3 hover:bg-blue-50 transition-colors flex items-center justify-center ${cooldown>0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full bg-white border border-blue-500 text-blue-500 py-3 hover:bg-blue-50 transition-colors flex items-center justify-center`}
               style={{ fontFamily: "'Noto Sans SC', sans-serif" }}
             >
-              {cooldown>0 ? `请稍后(${cooldown}s)` : '发送登录链接'}
+              登录
             </button>
 
             {/* 发送后的提示文案 */}
