@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>three.js - RGB 半调（图片上传与导出）</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <div id="info">
+    <img id="brandLogo" src="./logo2.png" alt="logo" />
+  </div>
+  <input id="fileInput" type="file" accept="image/*" style="display:none" />
+  <div id="dropCircle" aria-hidden="true"></div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./three.module.js",
+        "three/addons/": "./"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import Stats from 'three/addons/libs/stats.module.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { HalftonePass } from 'three/addons/postprocessing/HalftonePass.js';
+
+    let renderer, composer, camera, scene, controls, stats;
+    let imageMesh = null; // 显示纹理的平面
+    let currentTexture = null;
+
+    const state = {
+      fit: 'contain',           // 'contain' | 'cover'
+      bg: 'black',              // 'black' | 'transparent'
+      bgColor: '#000000',       // 背景颜色，可在不透明模式下调整
+      halftone: {
+        shape: 1,
+        radius: 4,
+        rotateR: Math.PI / 12,
+        rotateB: Math.PI / 12 * 2,
+        rotateG: Math.PI / 12 * 3,
+        scatter: 0,
+        blending: 1,
+        blendingMode: 1,
+        greyscale: false,
+        disable: false,
+        useTint: false,
+        tintColor: '#ff0000'
+      }
+    };
+
+    init();
+
+    function init() {
+      renderer = new THREE.WebGLRenderer({ alpha: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      stats = new Stats();
+      document.body.appendChild(stats.dom);
+      // 隐藏左上角性能预览
+      stats.dom.style.display = 'none';
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 0, 5);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 0, 0);
+      controls.enableDamping = true;
+
+      scene = new THREE.Scene();
+      setBackground(state.bg);
+
+      composer = new EffectComposer(renderer);
+      const renderPass = new RenderPass(scene, camera);
+      const halftonePass = new HalftonePass({ ...state.halftone });
+      composer.addPass(renderPass);
+      composer.addPass(halftonePass);
+      {
+        const c = new THREE.Color(state.halftone.tintColor);
+        halftonePass.uniforms.useTint.value = state.halftone.useTint;
+        halftonePass.uniforms.tintR.value = c.r;
+        halftonePass.uniforms.tintG.value = c.g;
+        halftonePass.uniforms.tintB.value = c.b;
+      }
+
+      // GUI（中文化）
+      const gui = new GUI();
+      // 将面板标题改为“调整器”
+      const headerEl = gui.domElement && gui.domElement.querySelector('.title');
+      if (headerEl) headerEl.textContent = '调整器';
+      // 面板项
+      gui.add(state, 'fit', { '包含': 'contain', '铺满': 'cover' }).name('适配').onChange(updateImageScale);
+      gui.add(state, 'bg', { '不透明': 'black', '透明': 'transparent' }).name('背景模式').onChange(setBackground);
+      gui.addColor(state, 'bgColor').name('背景色').onChange(() => setBackground(state.bg));
+      gui.add(state.halftone, 'shape', { '圆点': 1, '椭圆': 2, '线条': 3, '方块': 4 }).name('形状').onChange(v => { halftonePass.uniforms['shape'].value = v; });
+      gui.add(state.halftone, 'radius', 1, 25).name('半径').onChange(v => { halftonePass.uniforms['radius'].value = v; });
+      gui.add(state.halftone, 'rotateR', 0, 90).name('旋转R').onChange(v => { halftonePass.uniforms['rotateR'].value = v * (Math.PI / 180); });
+      gui.add(state.halftone, 'rotateG', 0, 90).name('旋转G').onChange(v => { halftonePass.uniforms['rotateG'].value = v * (Math.PI / 180); });
+      gui.add(state.halftone, 'rotateB', 0, 90).name('旋转B').onChange(v => { halftonePass.uniforms['rotateB'].value = v * (Math.PI / 180); });
+      gui.add(state.halftone, 'scatter', 0, 1, 0.01).name('散射').onChange(v => { halftonePass.uniforms['scatter'].value = v; });
+      gui.add(state.halftone, 'greyscale').name('灰阶').onChange(v => { halftonePass.uniforms['greyscale'].value = v; });
+      gui.add(state.halftone, 'blending', 0, 1, 0.01).name('混合强度').onChange(v => { halftonePass.uniforms['blending'].value = v; });
+      gui.add(state.halftone, 'blendingMode', { '线性': 1, '正片叠底': 2, '相加': 3, '变亮': 4, '变暗': 5 }).name('混合模式').onChange(v => { halftonePass.uniforms['blendingMode'].value = v; });
+      gui.add(state.halftone, 'disable').name('禁用效果').onChange(v => { halftonePass.uniforms['disable'].value = v; });
+      gui.add(state.halftone, 'useTint').name('形状颜色').onChange(v => { halftonePass.uniforms.useTint.value = v; });
+      gui.addColor(state.halftone, 'tintColor').name('形状颜色值').onChange(c => {
+        const col = new THREE.Color(c);
+        halftonePass.uniforms.tintR.value = col.r;
+        halftonePass.uniforms.tintG.value = col.g;
+        halftonePass.uniforms.tintB.value = col.b;
+      });
+      // 选择图片按钮（调用隐藏的文件输入框）
+      const chooseFile = () => document.getElementById('fileInput').click();
+      gui.add({ chooseFile }, 'chooseFile').name('选择图片（支持拖拽）');
+      gui.add({ exportPNG }, 'exportPNG').name('导出 PNG');
+
+
+      // 文件选择与拖拽（带圆形交互）
+      const fileInput = document.getElementById('fileInput');
+      const dropCircle = document.getElementById('dropCircle');
+
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) loadFile(file);
+      });
+
+      function showDropCircle() {
+        dropCircle.style.display = 'block';
+        dropCircle.style.opacity = '1';
+        dropCircle.style.transform = 'translate(-50%, -50%) scale(1)';
+      }
+      function hideDropCircle() {
+        dropCircle.style.opacity = '0';
+        dropCircle.style.transform = 'translate(-50%, -50%) scale(0.9)';
+        setTimeout(() => { dropCircle.style.display = 'none'; }, 180);
+      }
+
+      // 处理拖拽取消：使用深度计数 + dragend/ESC 统一收起
+      let dragDepth = 0;
+      let bubbleInside = false;   // 是否已进入内圈
+      let bounceLock = false;     // 防止在内圈里重复触发回弹
+ 
+      window.addEventListener('dragenter', (e) => {
+        dragDepth++;
+        showDropCircle();
+      });
+
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const rect = dropCircle.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = e.clientX - cx;
+        const dy = e.clientY - cy;
+        const dist = Math.hypot(dx, dy);
+        const radius = rect.width / 2;
+
+        // 外圈（挤压）与内圈（回弹）阈值
+        const outer = radius * 1.25;   // 靠近外圈开始挤压
+        const inner = radius * 0.85;   // 进入内圈立即回弹
+
+        if (dist <= inner) {
+          // 首次进入内圈触发一次回弹动画
+          if (!bubbleInside && !bounceLock) {
+            bubbleInside = true;
+            bounceLock = true;
+            dropCircle.style.transition = 'transform 180ms cubic-bezier(.2,.8,.2,1), opacity 120ms';
+            dropCircle.style.transform = 'translate(-50%, -50%) scale(0.92)';
+            setTimeout(() => {
+              dropCircle.style.transform = 'translate(-50%, -50%) scale(1.06)';
+              setTimeout(() => {
+                dropCircle.style.transform = 'translate(-50%, -50%) scale(1)';
+                bounceLock = false;
+              }, 150);
+            }, 60);
+          } else {
+            // 内圈保持复原状态
+            dropCircle.style.transform = 'translate(-50%, -50%) scale(1)';
+          }
+        } else if (dist < outer) {
+          // 靠近外圈：根据距离产生挤压效果
+          bubbleInside = false;
+          const t = 1 - (dist - inner) / (outer - inner); // 0→靠外，1→靠内
+          const sx = 1 - Math.max(0, Math.min(1, t)) * 0.28;
+          const sy = 1 - Math.max(0, Math.min(1, t)) * 0.40;
+          dropCircle.style.transition = 'transform 90ms ease-out, opacity 120ms';
+          dropCircle.style.transform = `translate(-50%, -50%) scale(${sx}, ${sy})`;
+        } else {
+          // 远离圆圈：复原
+          bubbleInside = false;
+          dropCircle.style.transition = 'transform 120ms ease-out, opacity 120ms';
+          dropCircle.style.transform = 'translate(-50%, -50%) scale(1)';
+        }
+      });
+
+      window.addEventListener('dragleave', (e) => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) hideDropCircle();
+      });
+
+      window.addEventListener('dragend', () => {
+        dragDepth = 0;
+        hideDropCircle();
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          dragDepth = 0;
+          hideDropCircle();
+        }
+      });
+
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer?.files?.[0];
+
+        // 弹入动画
+        dropCircle.style.transition = 'transform 220ms cubic-bezier(.2,.8,.2,1), opacity 220ms';
+        dropCircle.style.transform = 'translate(-50%, -50%) scale(0.7)';
+        setTimeout(() => {
+          dropCircle.style.transform = 'translate(-50%, -50%) scale(1.05)';
+          setTimeout(() => {
+            hideDropCircle();
+          }, 160);
+        }, 120);
+
+        dragDepth = 0;
+        if (file) loadFile(file);
+      });
+
+      window.addEventListener('resize', onResize);
+
+      renderer.setAnimationLoop(animate);
+    }
+
+    function setBackground(mode) {
+      const color = new THREE.Color(state.bgColor);
+      if (mode === 'transparent') {
+        renderer.setClearColor(color, 0);
+        scene.background = null;
+      } else {
+        renderer.setClearColor(color, 1);
+        scene.background = color;
+      }
+    }
+
+    async function loadFile(file) {
+      const url = URL.createObjectURL(file);
+      const loader = new THREE.TextureLoader();
+      loader.load(url, (tex) => {
+        URL.revokeObjectURL(url);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        setTexture(tex);
+      });
+    }
+
+    function setTexture(tex) {
+      currentTexture = tex;
+
+      if (!imageMesh) {
+        const geo = new THREE.PlaneGeometry(1, 1);
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false });
+        imageMesh = new THREE.Mesh(geo, mat);
+        imageMesh.position.set(0, 0, 0);
+        scene.add(imageMesh);
+      } else {
+        imageMesh.material.map = tex;
+        imageMesh.material.needsUpdate = true;
+      }
+
+      updateImageScale();
+    }
+
+    function viewportSizeAtZ(z) {
+      const h = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * Math.abs(z);
+      return { width: h * camera.aspect, height: h };
+    }
+
+    function updateImageScale() {
+      if (!imageMesh || !currentTexture || !currentTexture.image) return;
+      const imgW = currentTexture.image.width;
+      const imgH = currentTexture.image.height;
+      const imgAspect = imgW / imgH;
+      const vp = viewportSizeAtZ(Math.abs(camera.position.z - imageMesh.position.z));
+      const vpAspect = vp.width / vp.height;
+
+      let targetW, targetH;
+      const heightFill = () => { targetH = vp.height; targetW = targetH * imgAspect; };
+      const widthFill = () => { targetW = vp.width; targetH = targetW / imgAspect; };
+
+      if (state.fit === 'contain') {
+        if (vpAspect > imgAspect) heightFill(); else widthFill();
+      } else { // cover
+        if (vpAspect > imgAspect) widthFill(); else heightFill();
+      }
+
+      imageMesh.scale.set(targetW, targetH, 1);
+    }
+
+    function exportPNG() {
+      composer.render(0);
+      const url = renderer.domElement.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'halftone.png';
+      a.click();
+    }
+
+
+
+    function onResize() {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      composer.setSize(window.innerWidth, window.innerHeight);
+      updateImageScale();
+    }
+
+    function animate() {
+      stats.update();
+      controls.update();
+      if (imageMesh) {
+        imageMesh.quaternion.copy(camera.quaternion); // 始终面向相机
+      }
+      composer.render();
+    }
+  </script>
+</body>
+</html>

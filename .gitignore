@@ -1,0 +1,7 @@
+.env*
+node_modules/
+build/
+server/.env*
+api/.env*
+server/models/
+server/__pycache__/

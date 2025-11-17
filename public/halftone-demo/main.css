@@ -1,0 +1,6 @@
+body { margin: 0; overflow: hidden; background: #000; }
+#info { position: absolute; top: 10px; left: 10px; color: #fff; font-family: sans-serif; }
+#brandLogo { display: none !important; }
+#dropCircle { position: fixed; top: 50%; left: 50%; width: 800px; height: 800px; border: 3px solid #1e90ff; border-radius: 50%; background: transparent; pointer-events: none; display: none; transform: translate(-50%, -50%) scale(1); transition: transform 120ms ease-out, opacity 120ms ease-out; opacity: 0.9; z-index: 10000; }
+/* Move lil-gui down to avoid nav overlap */
+.lil-gui.root { position: fixed; top: 72px !important; right: 0; }
