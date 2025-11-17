@@ -37,16 +37,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const TEST_PASSWORD = "2434544181";
 
   const login = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { console.error('supabase login error', error); setIsLoggedIn(false); return; }
-    setIsLoggedIn(true);
-    setUserEmail(email);
-    setShowLoginDialog(false);
     try {
-      const now = Date.now();
-      const session = { email, createdAt: now, expiresAt: now + SESSION_TTL_MS };
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    } catch {}
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const bodyText = await res.text()
+      const data = (() => { try { return JSON.parse(bodyText) } catch { return {} } })()
+      if (!res.ok) { console.error('login failed', data); setIsLoggedIn(false); return }
+      const { access_token, refresh_token } = data
+      if (access_token && refresh_token) {
+        await supabase.auth.setSession({ access_token, refresh_token })
+      }
+      setIsLoggedIn(true)
+      setUserEmail(email)
+      setShowLoginDialog(false)
+      try {
+        const now = Date.now()
+        const session = { email, createdAt: now, expiresAt: now + SESSION_TTL_MS }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+      } catch {}
+    } catch (e) {
+      console.error('login exception', e)
+      setIsLoggedIn(false)
+    }
   };
 
   const sendMagicLink = async (email: string) => {
