@@ -54,7 +54,8 @@
             "@types/react": "^19.2.2",
             "@types/react-dom": "^19.2.2",
             "@vitejs/plugin-react-swc": "^3.10.2",
-            "vite": "6.3.5"
+            "vite": "6.3.5",
+            "@vercel/node": "^2.15.10"
       },
       "scripts": {
             "dev": "vite",
