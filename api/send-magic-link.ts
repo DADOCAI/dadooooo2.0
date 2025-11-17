@@ -9,7 +9,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return res.status(500).json({ error: 'supabase_not_configured' })
     }
-    const { email, redirectTo } = req.body || {}
+    // 兼容 x-www-form-urlencoded / 原始文本
+    const raw = typeof req.body === 'string' ? safeJson(req.body) : req.body
+    const { email, redirectTo } = raw || {}
     if (!email || !/[^\s@]+@[^\s@]+\.[^\s@]+/.test(email)) {
       return res.status(400).json({ error: 'invalid_email' })
     }
@@ -18,9 +20,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       email,
       options: { emailRedirectTo: redirectTo || 'http://localhost:3000' }
     })
-    if (error) return res.status(500).json({ error: 'supabase_error', detail: error.message })
+    if (error) return res.status(429).json({ error: 'supabase_error', detail: error.message })
     return res.json({ ok: true, data })
   } catch (e: any) {
     return res.status(500).json({ error: 'send_failed', detail: e?.message || String(e) })
   }
+}
+
+function safeJson(s: string) {
+  try { return JSON.parse(s) } catch { return {} }
 }

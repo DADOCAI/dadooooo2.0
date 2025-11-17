@@ -9,14 +9,21 @@ export function LoginDialog() {
   const { showLoginDialog, setShowLoginDialog, sendMagicLink, setShowRegisterDialog } = useAuth();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const [cooldown, setCooldown] = useState(0);
 
   // 中文注释：点击“发送登录链接”后，调用 Supabase 魔法链接登录
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (cooldown > 0) return;
     setMessage("");
     await sendMagicLink(email);
     setMessage("登录链接已发送，请到邮箱点击链接完成登录");
+    setCooldown(60);
   };
+
+  if (cooldown > 0) {
+    setTimeout(() => setCooldown((s) => s - 1), 1000);
+  }
 
   return (
     <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
@@ -62,10 +69,11 @@ export function LoginDialog() {
             {/* 登录按钮：发送魔法链接到邮箱 */}
             <button
               type="submit"
-              className="w-full bg-white border border-blue-500 text-blue-500 py-3 hover:bg-blue-50 transition-colors flex items-center justify-center"
+              disabled={cooldown > 0}
+              className={`w-full bg-white border border-blue-500 text-blue-500 py-3 hover:bg-blue-50 transition-colors flex items-center justify-center ${cooldown>0 ? 'opacity-50 cursor-not-allowed' : ''}`}
               style={{ fontFamily: "'Noto Sans SC', sans-serif" }}
             >
-              发送登录链接
+              {cooldown>0 ? `请稍后(${cooldown}s)` : '发送登录链接'}
             </button>
 
             {/* 发送后的提示文案 */}

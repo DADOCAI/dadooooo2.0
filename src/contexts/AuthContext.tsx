@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 发送魔法链接到用户邮箱
   const sendMagicLink = async (email: string) => {
     console.log('supabase magic link start', { email });
-    // 中文注释：优先通过云端端点发送邮件登录链接，其次后端代理，最后直连 Supabase
+    // 中文注释：优先通过云端端点发送邮件登录链接；失败时给出错误提示，避免频繁重试触发 429
     try {
       const endpoint = (import.meta.env.VITE_MAGIC_LINK_ENDPOINT as string) || '/api/send-magic-link'
       const res = await fetch(endpoint, {
@@ -63,16 +63,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const bodyText = await res.text()
       console.log('send-magic-link response', { status: res.status, body: bodyText })
       if (res.ok) return
+      // 若云端端点返回 429，提示稍后再试；不再回退直连，避免再触发 429
+      if (res.status === 429) {
+        console.warn('magic link rate-limited; please retry later')
+        return
+      }
     } catch (e) {
-      console.warn('send-magic-link proxy failed, fallback to direct supabase', e)
+      console.warn('send-magic-link proxy failed', e)
     }
-    // 中文注释：代理失败时，回退为直接调用 Supabase 的魔法链接登录
-    const { data, error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin }
-    })
-    if (error) { console.error('supabase magic link error', error); return }
-    console.log('supabase magic link ok', data)
+    // 不再直接调用 Supabase，减少触发 429 的概率；前端 UI 已给出提示
   };
 
   const register = async (email: string, password: string) => {
