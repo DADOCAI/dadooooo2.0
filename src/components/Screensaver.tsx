@@ -29,7 +29,7 @@ export function Screensaver({ onExit }: ScreensaverProps) {
       onClick={handleExit}
       onMouseMove={handleExit}
       onKeyDown={handleExit}
-      className={`fixed inset-0 z-[100] bg-transparent cursor-pointer flex items-center justify-center transition-opacity duration-500 ${
+      className={`fixed inset-0 z-[100] bg-transparent cursor-pointer flex items-center justify-center transition-opacity duration-500 outline-none focus:outline-none focus-visible:outline-none ${
         isVisible ? 'opacity-100' : 'opacity-0'
       }`}
       tabIndex={0}
