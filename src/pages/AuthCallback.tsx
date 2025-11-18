@@ -11,7 +11,15 @@ export default function AuthCallback() {
     const params = new URLSearchParams(window.location.search)
     const tokenHash = params.get("token_hash") || undefined
     const type = params.get("type") || undefined
+    const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''))
+    const accessToken = hashParams.get('access_token') || undefined
+    const refreshToken = hashParams.get('refresh_token') || undefined
     const handle = async () => {
+      if (accessToken && refreshToken) {
+        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        nav("/", { replace: true })
+        return
+      }
       if (tokenHash) {
         await supabase.auth.verifyOtp({ type: "magiclink", token_hash: tokenHash })
         nav("/", { replace: true })

@@ -13,7 +13,7 @@ export default async function handler(req: any, res: any) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: redirectTo || 'http://localhost:3000/auth/callback' }
+      options: { emailRedirectTo: redirectTo || 'https://dadooooo2-0.vercel.app/auth/callback' }
     })
     if (error) return res.status(429).json({ error: 'supabase_error', detail: error.message })
     return res.json({ ok: true, data })

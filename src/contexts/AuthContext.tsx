@@ -71,10 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 中文注释：优先通过云端端点发送邮件登录链接；失败时给出错误提示，避免频繁重试触发 429
     try {
       const endpoint = (import.meta.env.VITE_MAGIC_LINK_ENDPOINT as string) || '/api/send-magic-link'
+      const REDIRECT_BASE = (import.meta.env.VITE_PUBLIC_ORIGIN as string) || 'https://dadooooo2-0.vercel.app'
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, redirectTo: window.location.origin + '/auth/callback' })
+        body: JSON.stringify({ email, redirectTo: REDIRECT_BASE + '/auth/callback' })
       })
       const bodyText = await res.text()
       console.log('send-magic-link response', { status: res.status, body: bodyText })
@@ -93,10 +94,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
     console.log('supabase signup start', { email });
     try {
+      const REDIRECT_BASE = (import.meta.env.VITE_PUBLIC_ORIGIN as string) || 'https://dadooooo2-0.vercel.app'
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, redirectTo: window.location.origin + '/auth/callback' })
+        body: JSON.stringify({ email, password, redirectTo: REDIRECT_BASE + '/auth/callback' })
       })
       const bodyText = await res.text()
       const data = (() => { try { return JSON.parse(bodyText) } catch { return {} } })()
