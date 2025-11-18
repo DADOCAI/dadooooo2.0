@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const TEST_EMAIL = "dadoshejis@163.com";
   const TEST_PASSWORD = "2434544181";
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       const bodyText = await res.text()
       const data = (() => { try { return JSON.parse(bodyText) } catch { return {} } })()
-      if (!res.ok) { console.error('login failed', data); setIsLoggedIn(false); return }
+      if (!res.ok) { console.error('login failed', data); setIsLoggedIn(false); return { ok: false, error: data?.detail || '登录失败' } }
       const { access_token, refresh_token } = data
       if (access_token && refresh_token) {
         await supabase.auth.setSession({ access_token, refresh_token })
@@ -58,9 +58,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const session = { email, createdAt: now, expiresAt: now + SESSION_TTL_MS }
         localStorage.setItem(SESSION_KEY, JSON.stringify(session))
       } catch {}
+      return { ok: true }
     } catch (e) {
       console.error('login exception', e)
       setIsLoggedIn(false)
+      return { ok: false, error: '网络错误' }
     }
   };
 
@@ -72,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, redirectTo: window.location.origin })
+        body: JSON.stringify({ email, redirectTo: window.location.origin + '/auth/callback' })
       })
       const bodyText = await res.text()
       console.log('send-magic-link response', { status: res.status, body: bodyText })
@@ -88,19 +90,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 不再直接调用 Supabase，减少触发 429 的概率；前端 UI 已给出提示
   };
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
     console.log('supabase signup start', { email });
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: window.location.origin }
-    });
-    if (error) { console.error('supabase signup error', error); return; }
-    console.log('supabase signup ok', data);
+    try {
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, redirectTo: window.location.origin + '/auth/callback' })
+      })
+      const bodyText = await res.text()
+      const data = (() => { try { return JSON.parse(bodyText) } catch { return {} } })()
+      if (!res.ok) { console.error('supabase signup error', data); return { ok: false, error: data?.detail || '发送失败' } }
+      console.log('supabase signup ok', data);
+    } catch (e) { console.error('signup exception', e); return { ok: false, error: '网络错误' } }
     try {
       localStorage.setItem('dado.auth.registrationFlow', 'true');
       localStorage.setItem('dado.auth.registrationEmail', email);
     } catch {}
+    return { ok: true }
   };
 
   const logout = async () => {

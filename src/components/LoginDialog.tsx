@@ -16,7 +16,9 @@ export function LoginDialog() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage("");
-    await login(email, password);
+    const r = await login(email, password);
+    if (r.ok) setMessage("登录成功");
+    else setMessage(r.error || "登录失败");
   };
 
   return (

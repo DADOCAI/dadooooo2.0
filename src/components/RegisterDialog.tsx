@@ -17,9 +17,10 @@ export function RegisterDialog() {
     e.preventDefault();
     setMessage("");
     if (password !== confirmPassword) { setMessage("两次密码不一致"); return; }
-    await register(email, password);
+    const r = await register(email, password);
     try { setPrefillEmail(email); } catch {}
-    setMessage("验证链接已发送，请到邮箱点击链接完成注册");
+    if (r.ok) setMessage("验证链接已发送，请到邮箱点击链接完成注册");
+    else setMessage(r.error || "发送失败");
   };
 
   return (

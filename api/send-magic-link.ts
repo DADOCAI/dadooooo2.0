@@ -17,7 +17,7 @@ export default async function handler(req: any, res: any) {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo || 'http://localhost:3000' }
+      options: { emailRedirectTo: redirectTo || 'http://localhost:3000/auth/callback' }
     })
     if (error) return res.status(429).json({ error: 'supabase_error', detail: error.message })
     return res.json({ ok: true, data })
