@@ -50,8 +50,9 @@ export function BackgroundRemover() {
       setModelLoading(false);
       let finalAlpha: Uint8ClampedArray | undefined = mAlpha;
       if (finalAlpha) {
-        const q = maskQuality(finalAlpha);
-        if (q.fgRatio < 0.01 || q.fgRatio > 0.95) finalAlpha = undefined;
+        const q = maskStats(finalAlpha);
+        console.log('selfie mask stats', { avgAlpha: q.avg, fgRatio: q.fgRatio });
+        if (q.fgRatio < 0.01) finalAlpha = undefined;
       }
       if (!finalAlpha) {
         const ok = await canRunTF();
@@ -64,7 +65,8 @@ export function BackgroundRemover() {
       if (!finalAlpha) {
         const bg = estimateBackgroundColor(img);
         finalAlpha = computeAlphaMask(img, bg, mode === 'precise');
-        setErrorMsg('当前性能不足，已自动切换为快速预览模式');
+        setErrorMsg(mode === 'precise' ? '当前图片建议使用快速模式' : '当前性能不足，已自动切换为快速预览模式');
+        console.log('fallback fast mask');
       }
       if (edgeSmoothing) blurAlpha(finalAlpha, w, h, 2);
       const out = composeRGBA(img, finalAlpha);
@@ -74,6 +76,7 @@ export function BackgroundRemover() {
       setProcessedImage(url);
       const t1 = performance.now();
       if (t1 - t0 > 8000 && !mAlpha) setErrorMsg('当前性能不足，已自动切换为快速预览模式');
+      console.log('process done', { ms: Math.round(t1 - t0), size: { w, h } });
     } catch (err) {
       setErrorMsg('前端抠图失败，请换更清晰的图片');
     } finally {
@@ -98,6 +101,8 @@ export function BackgroundRemover() {
       const m = cctx.getImageData(0, 0, w, h).data;
       const alpha = new Uint8ClampedArray(w * h);
       for (let i = 0, p = 0; i < alpha.length; i++, p += 4) alpha[i] = m[p];
+      const qs = maskStats(alpha);
+      console.log('selfie segmentation done', { avgAlpha: qs.avg, fgRatio: qs.fgRatio });
       return alpha;
     } catch { return undefined; }
   }
@@ -124,8 +129,17 @@ export function BackgroundRemover() {
       const arr = (seg.data as unknown as Uint8Array) || new Uint8Array(seg.width * seg.height);
       const alpha = new Uint8ClampedArray(arr.length);
       for (let i = 0; i < arr.length; i++) alpha[i] = arr[i] ? 255 : 0;
+      const qb = maskStats(alpha);
+      console.log('bodypix mask stats', { avgAlpha: qb.avg, fgRatio: qb.fgRatio });
+      if (qb.fgRatio < 0.01) return undefined;
       return alpha;
     } catch { return undefined; }
+  }
+
+  function maskStats(alpha: Uint8ClampedArray) {
+    let sum = 0, cnt = alpha.length, fg = 0;
+    for (let i = 0; i < cnt; i++) { const a = alpha[i]; sum += a; if (a >= 128) fg++; }
+    return { avg: Math.round(sum / cnt), fgRatio: fg / cnt };
   }
 
   function estimateBackgroundColor(img: ImageData) {
