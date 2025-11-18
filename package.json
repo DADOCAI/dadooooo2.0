@@ -57,8 +57,10 @@
             "vite": "6.3.5",
             "@vercel/node": "^2.15.10"
       },
-      "scripts": {
+  "scripts": {
             "dev": "vite",
-            "build": "vite build"
-      }
+            "build": "vite build",
+            "build:ascii": "npm --prefix public/ascii ci && npm --prefix public/ascii run build",
+            "postbuild": "npm run build:ascii && cp -r public/ascii/build build/ascii/build"
+  }
 }
