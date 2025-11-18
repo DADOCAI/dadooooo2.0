@@ -2,7 +2,7 @@
 
 @font-face {
   font-family: 'ArkibalSerif';
-  src: url('/ascii/assets/ArkibalSerif-Regular.otf') format('opentype');
+  src: url('/ascii-app/assets/ArkibalSerif-Regular.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -11,6 +11,12 @@
 /* Default use ArkibalSerif for English letters; keep monospace for ASCII canvas */
 body {
   font-family: ArkibalSerif, var(--default-font-family, ui-sans-serif, system-ui, sans-serif);
+}
+
+.brand {
+  font-family: ArkibalSerif, var(--default-font-family, ui-sans-serif, system-ui, sans-serif);
+  font-size: 28px;
+  font-weight: 700;
 }
 
 /* Exclude copyright line */

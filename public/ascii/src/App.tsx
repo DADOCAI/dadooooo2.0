@@ -194,7 +194,9 @@ export default function App() {
         {/* Header */}
         <header className="border-b border-neutral-200">
           <div className="px-8 py-6">
-            <h1 className="text-black">ASCII 艺术生成器</h1>
+            <h1 className="text-black brand">
+              <a href="/" target="_parent" className="hover:opacity-70 transition-opacity">dadoooo</a>
+            </h1>
           </div>
         </header>
 

@@ -33,34 +33,113 @@ export function BackgroundRemover() {
     setIsProcessing(true);
     setErrorMsg(null);
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('mode', mode === 'precise' ? 'precise' : 'fast');
-      formData.append('edge_smoothing', edgeSmoothing ? 'true' : 'false');
-
-      const res = await fetch('/api/cutout', {
-        method: 'POST',
-        body: formData,
+      const bmp = await createImageBitmap(selectedFile);
+      const maxSide = 2048;
+      const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+      const w = Math.max(1, Math.round(bmp.width * scale));
+      const h = Math.max(1, Math.round(bmp.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(bmp, 0, 0, w, h);
+      const img = ctx.getImageData(0, 0, w, h);
+      const bg = estimateBackgroundColor(img);
+      const alpha = computeAlphaMask(img, bg, mode === 'precise');
+      if (edgeSmoothing) blurAlpha(alpha, w, h, 2);
+      const out = composeRGBA(img, alpha);
+      ctx.putImageData(out, 0, 0);
+      const blob: Blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
       });
-      if (!res.ok) {
-        const text = await res.text();
-        try {
-          const j = JSON.parse(text);
-          setErrorMsg(j?.detail || j?.error || '处理失败');
-        } catch {
-          setErrorMsg('处理失败');
-        }
-        return;
-      }
-      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       setProcessedImage(url);
     } catch (err) {
-      setErrorMsg('网络异常或服务未配置');
+      setErrorMsg('前端抠图失败，请换更清晰的图片');
     } finally {
       setIsProcessing(false);
     }
   };
+
+  function estimateBackgroundColor(img: ImageData) {
+    const { data, width, height } = img;
+    let r = 0, g = 0, b = 0, n = 0;
+    const step = Math.max(1, Math.floor(Math.min(width, height) / 50));
+    for (let x = 0; x < width; x += step) {
+      const iTop = (0 * width + x) * 4;
+      const iBot = ((height - 1) * width + x) * 4;
+      r += data[iTop]; g += data[iTop + 1]; b += data[iTop + 2]; n++;
+      r += data[iBot]; g += data[iBot + 1]; b += data[iBot + 2]; n++;
+    }
+    for (let y = 0; y < height; y += step) {
+      const iL = (y * width + 0) * 4;
+      const iR = (y * width + (width - 1)) * 4;
+      r += data[iL]; g += data[iL + 1]; b += data[iL + 2]; n++;
+      r += data[iR]; g += data[iR + 1]; b += data[iR + 2]; n++;
+    }
+    return [r / n, g / n, b / n];
+  }
+
+  function computeAlphaMask(img: ImageData, bg: number[], precise: boolean) {
+    const { data, width, height } = img;
+    const alpha = new Uint8ClampedArray(width * height);
+    const dists: number[] = [];
+    for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 64))) {
+      for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 64))) {
+        const i = (y * width + x) * 4;
+        const dr = data[i] - bg[0];
+        const dg = data[i + 1] - bg[1];
+        const db = data[i + 2] - bg[2];
+        dists.push(Math.sqrt(dr * dr + dg * dg + db * db));
+      }
+    }
+    dists.sort((a, b) => a - b);
+    const tLow = dists[Math.max(0, Math.floor(dists.length * 0.2))] + 5;
+    const tHigh = dists[Math.max(0, Math.floor(dists.length * (precise ? 0.6 : 0.4)))] + 20;
+    for (let iPix = 0, p = 0; iPix < width * height; iPix++, p += 4) {
+      const dr = data[p] - bg[0];
+      const dg = data[p + 1] - bg[1];
+      const db = data[p + 2] - bg[2];
+      const d = Math.sqrt(dr * dr + dg * dg + db * db);
+      let a = 0;
+      if (d <= tLow) a = 0;
+      else if (d >= tHigh) a = 255;
+      else a = Math.round(((d - tLow) / (tHigh - tLow)) * 255);
+      alpha[iPix] = a;
+    }
+    return alpha;
+  }
+
+  function blurAlpha(alpha: Uint8ClampedArray, w: number, h: number, r: number) {
+    const out = new Uint8ClampedArray(alpha.length);
+    const rs = Math.max(1, r);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let s = 0, c = 0;
+        for (let dy = -rs; dy <= rs; dy++) {
+          const yy = Math.min(h - 1, Math.max(0, y + dy));
+          for (let dx = -rs; dx <= rs; dx++) {
+            const xx = Math.min(w - 1, Math.max(0, x + dx));
+            s += alpha[yy * w + xx];
+            c++;
+          }
+        }
+        out[y * w + x] = Math.round(s / c);
+      }
+    }
+    alpha.set(out);
+  }
+
+  function composeRGBA(img: ImageData, alpha: Uint8ClampedArray) {
+    const { data, width, height } = img;
+    const out = new ImageData(width, height);
+    for (let i = 0, p = 0; i < width * height; i++, p += 4) {
+      out.data[p] = data[p];
+      out.data[p + 1] = data[p + 1];
+      out.data[p + 2] = data[p + 2];
+      out.data[p + 3] = alpha[i];
+    }
+    return out;
+  }
 
   const handleDownload = () => {
     if (!processedImage) return;

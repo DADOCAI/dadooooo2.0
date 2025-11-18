@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/api/(login|signup|send-magic-link)", "dest": "/api/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/" }
   ]
