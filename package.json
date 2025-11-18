@@ -47,7 +47,10 @@
             "sonner": "^2.0.3",
             "tailwind-merge": "*",
             "three": "^0.158.0",
-            "vaul": "^1.1.2"
+            "vaul": "^1.1.2",
+            "@mediapipe/selfie_segmentation": "*",
+            "@tensorflow/tfjs": "*",
+            "@tensorflow-models/body-pix": "*"
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
@@ -61,6 +64,6 @@
             "dev": "vite",
             "build": "vite build",
             "build:ascii": "npm --prefix public/ascii ci && npm --prefix public/ascii run build",
-            "postbuild": "npm run build:ascii && mkdir -p build/ascii-app && cp -r public/ascii/dist/* build/ascii-app/ && cp -r public/ascii/assets build/ascii-app/ && rm -f build/ascii/index.html"
+            "postbuild": "npm run build:ascii && mkdir -p build/ascii && cp -r public/ascii/dist/* build/ascii/ && cp -r public/ascii/assets build/ascii/ && mkdir -p build/models/selfie_segmentation && cp -r node_modules/@mediapipe/selfie_segmentation/* build/models/selfie_segmentation/"
   }
 }

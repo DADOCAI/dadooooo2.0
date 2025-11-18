@@ -13,6 +13,7 @@ export function BackgroundRemover() {
   const [edgeSmoothing, setEdgeSmoothing] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -43,22 +44,89 @@ export function BackgroundRemover() {
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(bmp, 0, 0, w, h);
       const img = ctx.getImageData(0, 0, w, h);
-      const bg = estimateBackgroundColor(img);
-      const alpha = computeAlphaMask(img, bg, mode === 'precise');
-      if (edgeSmoothing) blurAlpha(alpha, w, h, 2);
-      const out = composeRGBA(img, alpha);
+      setModelLoading(true);
+      const t0 = performance.now();
+      const mAlpha = await runSelfieMask(img, w, h).catch(() => undefined);
+      setModelLoading(false);
+      let finalAlpha: Uint8ClampedArray | undefined = mAlpha;
+      if (finalAlpha) {
+        const q = maskQuality(finalAlpha);
+        if (q.fgRatio < 0.01 || q.fgRatio > 0.95) finalAlpha = undefined;
+      }
+      if (!finalAlpha) {
+        const ok = await canRunTF();
+        if (ok) {
+          setModelLoading(true);
+          finalAlpha = await runBodyPixMask(canvas).catch(() => undefined);
+          setModelLoading(false);
+        }
+      }
+      if (!finalAlpha) {
+        const bg = estimateBackgroundColor(img);
+        finalAlpha = computeAlphaMask(img, bg, mode === 'precise');
+        setErrorMsg('当前性能不足，已自动切换为快速预览模式');
+      }
+      if (edgeSmoothing) blurAlpha(finalAlpha, w, h, 2);
+      const out = composeRGBA(img, finalAlpha);
       ctx.putImageData(out, 0, 0);
-      const blob: Blob = await new Promise((resolve, reject) => {
-        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
-      });
+      const blob: Blob = await new Promise((resolve, reject) => { canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png'); });
       const url = URL.createObjectURL(blob);
       setProcessedImage(url);
+      const t1 = performance.now();
+      if (t1 - t0 > 8000 && !mAlpha) setErrorMsg('当前性能不足，已自动切换为快速预览模式');
     } catch (err) {
       setErrorMsg('前端抠图失败，请换更清晰的图片');
     } finally {
       setIsProcessing(false);
     }
   };
+
+  async function runSelfieMask(img: ImageData, w: number, h: number) {
+    try {
+      const { SelfieSegmentation } = await import('@mediapipe/selfie_segmentation');
+      const s = new SelfieSegmentation({ locateFile: (f: string) => '/models/selfie_segmentation/' + f });
+      s.setOptions({ modelSelection: mode === 'precise' ? 1 : 0 });
+      const bmpCanvas = document.createElement('canvas');
+      bmpCanvas.width = w; bmpCanvas.height = h;
+      bmpCanvas.getContext('2d')!.putImageData(img, 0, 0);
+      const bitmap = await createImageBitmap(bmpCanvas);
+      const r = await new Promise<any>(async (resolve, reject) => { s.onResults(resolve); try { await s.send({ image: bitmap }); } catch (e) { reject(e); } });
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const cctx = c.getContext('2d')!;
+      cctx.drawImage(r.segmentationMask, 0, 0, w, h);
+      const m = cctx.getImageData(0, 0, w, h).data;
+      const alpha = new Uint8ClampedArray(w * h);
+      for (let i = 0, p = 0; i < alpha.length; i++, p += 4) alpha[i] = m[p];
+      return alpha;
+    } catch { return undefined; }
+  }
+
+  async function canRunTF() {
+    try {
+      const tf = await import('@tensorflow/tfjs');
+      try { await tf.setBackend('webgl'); } catch {}
+      await tf.ready();
+      const be = tf.getBackend();
+      if (be !== 'webgl' && be !== 'wasm') return false;
+      return true;
+    } catch { return false; }
+  }
+
+  async function runBodyPixMask(canvasEl: HTMLCanvasElement) {
+    try {
+      const bodyPix = await import('@tensorflow-models/body-pix');
+      const tf = await import('@tensorflow/tfjs');
+      try { await tf.setBackend('webgl'); } catch {}
+      await tf.ready();
+      const model = await bodyPix.load({ modelUrl: '/models/bodypix/model.json' } as any);
+      const seg = await model.segmentPerson(canvasEl, { segmentationThreshold: 0.6 } as any);
+      const arr = (seg.data as unknown as Uint8Array) || new Uint8Array(seg.width * seg.height);
+      const alpha = new Uint8ClampedArray(arr.length);
+      for (let i = 0; i < arr.length; i++) alpha[i] = arr[i] ? 255 : 0;
+      return alpha;
+    } catch { return undefined; }
+  }
 
   function estimateBackgroundColor(img: ImageData) {
     const { data, width, height } = img;
@@ -273,8 +341,8 @@ export function BackgroundRemover() {
 
         {/* Action Buttons */}
         <div className="flex gap-4 justify-center">
-          <RetroButton onClick={handleProcess} disabled={!selectedImage || isProcessing} className="px-8 py-3 text-lg">
-            {isProcessing ? '处理中...' : '开始抠图'}
+          <RetroButton onClick={handleProcess} disabled={!selectedImage || isProcessing || modelLoading} className="px-8 py-3 text-lg">
+            {isProcessing ? '处理中...' : (modelLoading ? '正在加载抠图模型，请稍等...' : '开始抠图')}
           </RetroButton>
           {processedImage && (
             <RetroButton onClick={handleDownload} className="px-8 py-3 text-lg">
