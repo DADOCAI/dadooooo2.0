@@ -61,6 +61,6 @@
             "dev": "vite",
             "build": "vite build",
             "build:ascii": "npm --prefix public/ascii ci && npm --prefix public/ascii run build",
-            "postbuild": "npm run build:ascii && cp -r public/ascii/build build/ascii/build"
+            "postbuild": "npm run build:ascii && cp -r public/ascii/build build/ascii"
   }
 }
