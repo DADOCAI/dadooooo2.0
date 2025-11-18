@@ -12,13 +12,15 @@ export default async function handler(req: Request): Promise<Response> {
     const edge = (formData.get('edge_smoothing') as string) || 'false'
     if (!file) return new Response(JSON.stringify({ error: 'file_missing' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
 
+    const buf = await file.arrayBuffer()
+    const blob = new Blob([buf], { type: file.type || 'image/png' })
     const outForm = new FormData()
-    outForm.append('image', file)
+    outForm.append('image', blob, (file as any).name || 'upload.png')
     outForm.append('format', 'png')
 
     const resp = await fetch('https://api.rembg.com/rmbg', {
       method: 'POST',
-      headers: { 'x-api-key': API_KEY },
+      headers: { 'x-api-key': API_KEY, 'Accept': 'image/png' },
       body: outForm
     })
     if (!resp.ok) {
