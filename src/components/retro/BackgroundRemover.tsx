@@ -68,7 +68,9 @@ export function BackgroundRemover() {
         setErrorMsg(mode === 'precise' ? '当前图片建议使用快速模式' : '当前性能不足，已自动切换为快速预览模式');
         console.log('fallback fast mask');
       }
-      if (edgeSmoothing) blurAlpha(finalAlpha, w, h, 2);
+      finalAlpha = refineAlpha(finalAlpha, w, h, { morphRadius: mode === 'precise' ? 2 : 1, featherRadius: edgeSmoothing ? 2 : 1 });
+      const statsAfter = maskStats(finalAlpha);
+      console.log('mask refined', { avgAlpha: statsAfter.avg, fgRatio: statsAfter.fgRatio });
       const out = composeRGBA(img, finalAlpha);
       ctx.putImageData(out, 0, 0);
       const blob: Blob = await new Promise((resolve, reject) => { canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png'); });
@@ -209,6 +211,56 @@ export function BackgroundRemover() {
       }
     }
     alpha.set(out);
+  }
+
+  function refineAlpha(alpha: Uint8ClampedArray, w: number, h: number, opts: { morphRadius: number, featherRadius: number }) {
+    const bin = new Uint8ClampedArray(alpha.length);
+    for (let i = 0; i < alpha.length; i++) bin[i] = alpha[i] >= 128 ? 255 : 0;
+    const opened = erode(dilate(bin, w, h, opts.morphRadius), w, h, opts.morphRadius); // closing
+    const refined = new Uint8ClampedArray(opened.length);
+    refined.set(opened);
+    if (opts.featherRadius > 0) blurAlpha(refined, w, h, opts.featherRadius);
+    return refined;
+  }
+
+  function dilate(src: Uint8ClampedArray, w: number, h: number, r: number) {
+    const out = new Uint8ClampedArray(src.length);
+    const rs = Math.max(1, r);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let maxv = 0;
+        for (let dy = -rs; dy <= rs; dy++) {
+          const yy = Math.min(h - 1, Math.max(0, y + dy));
+          for (let dx = -rs; dx <= rs; dx++) {
+            const xx = Math.min(w - 1, Math.max(0, x + dx));
+            const v = src[yy * w + xx];
+            if (v > maxv) maxv = v;
+          }
+        }
+        out[y * w + x] = maxv;
+      }
+    }
+    return out;
+  }
+
+  function erode(src: Uint8ClampedArray, w: number, h: number, r: number) {
+    const out = new Uint8ClampedArray(src.length);
+    const rs = Math.max(1, r);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let minv = 255;
+        for (let dy = -rs; dy <= rs; dy++) {
+          const yy = Math.min(h - 1, Math.max(0, y + dy));
+          for (let dx = -rs; dx <= rs; dx++) {
+            const xx = Math.min(w - 1, Math.max(0, x + dx));
+            const v = src[yy * w + xx];
+            if (v < minv) minv = v;
+          }
+        }
+        out[y * w + x] = minv;
+      }
+    }
+    return out;
   }
 
   function composeRGBA(img: ImageData, alpha: Uint8ClampedArray) {
