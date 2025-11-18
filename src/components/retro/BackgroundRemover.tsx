@@ -2,6 +2,8 @@ import { useState, useRef } from 'react';
 import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
+import LocalModelInitDialog from '../common/LocalModelInitDialog';
+import { ensureModelLoaded, runMatting } from '../../lib/localMattingModel';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -15,6 +17,10 @@ export function BackgroundRemover() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [modelLoading, setModelLoading] = useState(false);
   const [onnxSession, setOnnxSession] = useState<any | null>(null);
+  const [dlgVisible, setDlgVisible] = useState(false);
+  const [dlgStage, setDlgStage] = useState<string | undefined>(undefined);
+  const [dlgProgress, setDlgProgress] = useState<number | undefined>(undefined);
+  const [dlgError, setDlgError] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,11 +54,28 @@ export function BackgroundRemover() {
       const t0 = performance.now();
       let mAlpha: Uint8ClampedArray | undefined = undefined;
       if (mode === 'precise') {
-        if (!onnxSession) await ensureU2Net();
-        if (onnxSession) {
+        setDlgVisible(true);
+        setDlgStage('downloading');
+        setDlgProgress(undefined);
+        setDlgError(undefined);
+        try {
+          await ensureModelLoaded((s, p, e) => { setDlgStage(s); setDlgProgress(p); setDlgError(e); });
+          setDlgVisible(false);
           setModelLoading(true);
-          mAlpha = await runU2NetMask(onnxSession, img, w, h).catch(() => undefined);
+          const outId = await runMatting(img);
           setModelLoading(false);
+          const blob: Blob = await new Promise((resolve, reject) => {
+            const c2 = document.createElement('canvas');
+            c2.width = outId.width; c2.height = outId.height;
+            c2.getContext('2d')!.putImageData(outId, 0, 0);
+            c2.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+          });
+          const url2 = URL.createObjectURL(blob);
+          setProcessedImage(url2);
+          return;
+        } catch (e: any) {
+          setDlgVisible(false);
+          setErrorMsg('设备不支持本地精确抠图，请使用快速模式');
         }
       }
       if (!mAlpha) {
@@ -355,9 +378,10 @@ export function BackgroundRemover() {
     a.click();
   };
 
-  return (
-    <RetroWindow title="抠图智能化工具">
-      <div className="p-6 space-y-6">
+      return (
+        <RetroWindow title="抠图智能化工具">
+          <div className="p-6 space-y-6">
+            <LocalModelInitDialog visible={dlgVisible} stage={dlgStage} progress={dlgProgress} errorMessage={dlgError} />
         {/* Mode Selection */}
         <div className="flex gap-4 items-center justify-center">
           <button
