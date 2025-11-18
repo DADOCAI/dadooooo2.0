@@ -14,6 +14,7 @@ export function BackgroundRemover() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [modelLoading, setModelLoading] = useState(false);
+  const [onnxSession, setOnnxSession] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,10 +45,21 @@ export function BackgroundRemover() {
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(bmp, 0, 0, w, h);
       const img = ctx.getImageData(0, 0, w, h);
-      setModelLoading(true);
       const t0 = performance.now();
-      const mAlpha = await runSelfieMask(img, w, h).catch(() => undefined);
-      setModelLoading(false);
+      let mAlpha: Uint8ClampedArray | undefined = undefined;
+      if (mode === 'precise') {
+        if (!onnxSession) await ensureU2Net();
+        if (onnxSession) {
+          setModelLoading(true);
+          mAlpha = await runU2NetMask(onnxSession, img, w, h).catch(() => undefined);
+          setModelLoading(false);
+        }
+      }
+      if (!mAlpha) {
+        setModelLoading(true);
+        mAlpha = await runSelfieMask(img, w, h).catch(() => undefined);
+        setModelLoading(false);
+      }
       let finalAlpha: Uint8ClampedArray | undefined = mAlpha;
       if (finalAlpha) {
         const q = maskStats(finalAlpha);
@@ -85,6 +97,66 @@ export function BackgroundRemover() {
       setIsProcessing(false);
     }
   };
+
+  async function ensureU2Net() {
+    try {
+      setModelLoading(true);
+      const ort = await import('onnxruntime-web');
+      const session = await ort.InferenceSession.create('/models/u2net.onnx', { executionProviders: ['webgpu', 'wasm'] });
+      setOnnxSession(session as any);
+    } catch (e: any) {
+      setErrorMsg('模型加载失败或网络异常');
+    } finally { setModelLoading(false); }
+  }
+
+  async function runU2NetMask(session: any, img: ImageData, w: number, h: number) {
+    const target = 320;
+    const c = document.createElement('canvas');
+    c.width = target; c.height = target;
+    const cctx = c.getContext('2d')!;
+    const srcC = document.createElement('canvas');
+    srcC.width = w; srcC.height = h;
+    srcC.getContext('2d')!.putImageData(img, 0, 0);
+    cctx.drawImage(srcC, 0, 0, target, target);
+    const rd = cctx.getImageData(0, 0, target, target).data;
+    const chw = new Float32Array(1 * 3 * target * target);
+    let p = 0;
+    for (let y = 0; y < target; y++) {
+      for (let x = 0; x < target; x++) {
+        const i = (y * target + x) * 4;
+        chw[p + 0 * target * target] = rd[i] / 255;
+        chw[p + 1 * target * target] = rd[i + 1] / 255;
+        chw[p + 2 * target * target] = rd[i + 2] / 255;
+        p++;
+      }
+    }
+    const ort = await import('onnxruntime-web');
+    const inputName = session.inputNames ? session.inputNames[0] : 'input';
+    const feeds: any = {}
+    feeds[inputName] = new ort.Tensor('float32', chw, [1, 3, target, target]);
+    const results = await session.run(feeds);
+    const outputName = session.outputNames ? session.outputNames[0] : Object.keys(results)[0];
+    const out = results[outputName].data as Float32Array | Uint8Array;
+    const maskSmall = new Uint8ClampedArray(target * target);
+    for (let i = 0; i < maskSmall.length; i++) {
+      const v = (out as any)[i];
+      const a = Math.max(0, Math.min(255, Math.round((typeof v === 'number' ? v : Number(v)) * 255)));
+      maskSmall[i] = a;
+    }
+    const mCanvas = document.createElement('canvas');
+    mCanvas.width = target; mCanvas.height = target;
+    const mctx = mCanvas.getContext('2d')!;
+    const mimg = mctx.createImageData(target, target);
+    for (let i = 0, p2 = 0; i < maskSmall.length; i++, p2 += 4) { mimg.data[p2 + 3] = maskSmall[i]; }
+    mctx.putImageData(mimg, 0, 0);
+    const big = document.createElement('canvas');
+    big.width = w; big.height = h;
+    big.getContext('2d')!.drawImage(mCanvas, 0, 0, w, h);
+    const bigData = big.getContext('2d')!.getImageData(0, 0, w, h).data;
+    const alpha = new Uint8ClampedArray(w * h);
+    for (let i = 0, p3 = 0; i < alpha.length; i++, p3 += 4) alpha[i] = bigData[p3 + 3];
+    return alpha;
+  }
 
   async function runSelfieMask(img: ImageData, w: number, h: number) {
     try {
@@ -408,7 +480,7 @@ export function BackgroundRemover() {
         {/* Action Buttons */}
         <div className="flex gap-4 justify-center">
           <RetroButton onClick={handleProcess} disabled={!selectedImage || isProcessing || modelLoading} className="px-8 py-3 text-lg">
-            {isProcessing ? '处理中...' : (modelLoading ? '正在加载抠图模型，请稍等...' : '开始抠图')}
+            {isProcessing ? '处理中...' : (modelLoading ? '正在加载模型，首次可能需要10-30秒' : '开始抠图')}
           </RetroButton>
           {processedImage && (
             <RetroButton onClick={handleDownload} className="px-8 py-3 text-lg">

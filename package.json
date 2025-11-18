@@ -47,6 +47,7 @@
             "sonner": "^2.0.3",
             "tailwind-merge": "*",
             "three": "^0.158.0",
+            "onnxruntime-web": "^1.17.0",
             "vaul": "^1.1.2",
             "@mediapipe/selfie_segmentation": "*",
             "@tensorflow/tfjs": "*",
