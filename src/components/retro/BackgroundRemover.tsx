@@ -12,6 +12,7 @@ export function BackgroundRemover() {
   const [mode, setMode] = useState<ProcessMode>('precise');
   const [edgeSmoothing, setEdgeSmoothing] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,6 +31,7 @@ export function BackgroundRemover() {
   const handleProcess = async () => {
     if (!selectedFile) return;
     setIsProcessing(true);
+    setErrorMsg(null);
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
@@ -41,13 +43,20 @@ export function BackgroundRemover() {
         body: formData,
       });
       if (!res.ok) {
-        throw new Error('处理失败');
+        const text = await res.text();
+        try {
+          const j = JSON.parse(text);
+          setErrorMsg(j?.detail || j?.error || '处理失败');
+        } catch {
+          setErrorMsg('处理失败');
+        }
+        return;
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       setProcessedImage(url);
     } catch (err) {
-      console.error(err);
+      setErrorMsg('网络异常或服务未配置');
     } finally {
       setIsProcessing(false);
     }
@@ -150,18 +159,21 @@ export function BackgroundRemover() {
                 />
               )}
 
-              {processedImage ? (
-                <img src={processedImage} alt="Processed" className="relative w-full h-full object-contain" />
-              ) : (
-                <div className="relative w-full h-full flex flex-col items-center justify-center">
-                  <ImageIcon className="w-16 h-16 mb-4 text-gray-400" />
-                  <p className="text-gray-500 text-center">
-                    {isProcessing ? '处理中...' : (selectedImage ? '等待处理...' : '处理结果将显示在这里')}
-                  </p>
-                </div>
+          {processedImage ? (
+            <img src={processedImage} alt="Processed" className="relative w-full h-full object-contain" />
+          ) : (
+            <div className="relative w-full h-full flex flex-col items-center justify-center">
+              <ImageIcon className="w-16 h-16 mb-4 text-gray-400" />
+              <p className="text-gray-500 text-center">
+                {isProcessing ? '处理中...' : (selectedImage ? '等待处理...' : '处理结果将显示在这里')}
+              </p>
+              {errorMsg && (
+                <p className="text-red-600 text-center mt-2">{errorMsg}</p>
               )}
             </div>
-          </div>
+          )}
+        </div>
+      </div>
         </div>
 
         {/* Options */}
