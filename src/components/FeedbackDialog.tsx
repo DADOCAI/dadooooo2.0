@@ -11,6 +11,7 @@ import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { toast } from "sonner@2.0.3";
+import { supabase } from "@/lib/supabase";
 
 interface FeedbackDialogProps {
   open: boolean;
@@ -31,18 +32,19 @@ export function FeedbackDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
-    // 模拟提交到后端
-    // 你可以在这里添加真实的 API 调用
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // TODO: 替换为真实的 API 调用
-      console.log("Feedback submitted:", formData);
-
-      toast.success("感谢您的反馈！");
-
-      // 重置表单
+      const { error } = await supabase
+        .from("feedback")
+        .insert([
+          {
+            name: formData.name,
+            email: formData.email,
+            content: formData.message,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      if (error) throw error;
+      toast.success("反馈提交成功");
       setFormData({ name: "", email: "", message: "" });
       onOpenChange(false);
     } catch (error) {
