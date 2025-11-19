@@ -3,7 +3,7 @@ import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
 import LocalModelInitDialog from '../common/LocalModelInitDialog';
-import ModelManager from '../../lib/BackgroundRemoverModelManager';
+import { ensureModelLoaded, runMatting, getBackend, runFastPreview } from '../../lib/localMattingModel';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -25,15 +25,26 @@ export function BackgroundRemover() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setDlgVisible(true);
-    setDlgStage('downloading');
-    setDlgProgress(undefined);
-    setDlgError(undefined);
-    ModelManager.preload((s, p, e) => {
-      setDlgStage(s); setDlgProgress(p); setDlgError(e);
-      if (s === 'ready') setDlgVisible(false);
-    });
-  }, []);
+    let alive = true
+    ;(async () => {
+      try {
+        setDlgVisible(true)
+        setDlgStage('downloading')
+        setDlgProgress(undefined)
+        setDlgError(undefined)
+        await ensureModelLoaded((s, p, e) => {
+          if (!alive) return
+          setDlgStage(s); setDlgProgress(p); setDlgError(e)
+        })
+        if (!alive) return
+        setDlgVisible(false)
+      } catch (e) {
+        if (!alive) return
+        setDlgVisible(false)
+      }
+    })()
+    return () => { alive = false }
+  }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -52,7 +63,6 @@ export function BackgroundRemover() {
     if (!selectedFile) return;
     setIsProcessing(true);
     setErrorMsg(null);
-    let img: ImageData | undefined;
     try {
       const bmp = await createImageBitmap(selectedFile);
       const maxSide = 2048;
@@ -63,27 +73,65 @@ export function BackgroundRemover() {
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(bmp, 0, 0, w, h);
-      img = ctx.getImageData(0, 0, w, h);
-      setModelLoading(true);
-      const outId = mode === 'precise' ? await ModelManager.runPrecise(img) : await ModelManager.runFast(img);
-      setModelLoading(false);
-      const be = ModelManager.getBackend();
-      if (be === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
-      else if (be === 'wasm-simd') setStatusMsg('正在使用极速模式');
-      else if (be === 'wasm') setStatusMsg('兼容模式，速度略慢');
-      else if (be === 'fast') setStatusMsg('您的设备暂不支持本地抠图，已为您自动切换到快速模式');
-      const blob: Blob = await new Promise((resolve, reject) => {
-        const c2 = document.createElement('canvas');
-        c2.width = outId.width; c2.height = outId.height;
-        c2.getContext('2d')!.putImageData(outId, 0, 0);
-        c2.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
-      });
-      const url2 = URL.createObjectURL(blob);
-      setProcessedImage(url2);
-    } catch (err) {
+      const img = ctx.getImageData(0, 0, w, h);
+      let preciseReady = true;
       try {
-        if (!img) throw new Error('no_image');
-        const outFast = await ModelManager.runFast(img);
+        // if model not yet ready, start loading in background and provide fast preview first
+        setModelLoading(true);
+        const outId = await runMatting(img);
+        setModelLoading(false);
+        const be = getBackend();
+        if (be === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
+        else if (be === 'wasm-simd') setStatusMsg('正在使用极速模式');
+        else if (be === 'wasm') setStatusMsg('兼容模式，速度略慢');
+        const blob: Blob = await new Promise((resolve, reject) => {
+          const c2 = document.createElement('canvas');
+          c2.width = outId.width; c2.height = outId.height;
+          c2.getContext('2d')!.putImageData(outId, 0, 0);
+          c2.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+        });
+        const url2 = URL.createObjectURL(blob);
+        setProcessedImage(url2);
+      } catch (errPrecise) {
+        preciseReady = false;
+      }
+      if (!preciseReady) {
+        try {
+          const outFast = await runFastPreview(img);
+          const blob: Blob = await new Promise((resolve, reject) => {
+            const c3 = document.createElement('canvas');
+            c3.width = outFast.width; c3.height = outFast.height;
+            c3.getContext('2d')!.putImageData(outFast, 0, 0);
+            c3.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+          });
+          const url3 = URL.createObjectURL(blob);
+          setProcessedImage(url3);
+          setStatusMsg('已先生成快速预览，模型正在后台加载后将自动升级');
+          // try to load and upgrade when ready
+          try {
+            await ensureModelLoaded((s, p, e) => { setDlgStage(s); setDlgProgress(p); setDlgError(e); });
+            const outId2 = await runMatting(img);
+            const blob2: Blob = await new Promise((resolve, reject) => {
+              const c4 = document.createElement('canvas');
+              c4.width = outId2.width; c4.height = outId2.height;
+              c4.getContext('2d')!.putImageData(outId2, 0, 0);
+              c4.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+            });
+            const url4 = URL.createObjectURL(blob2);
+            setProcessedImage(url4);
+            const be2 = getBackend();
+            if (be2 === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
+            else if (be2 === 'wasm-simd') setStatusMsg('正在使用极速模式');
+            else if (be2 === 'wasm') setStatusMsg('兼容模式，速度略慢');
+          } catch {}
+        } catch {
+          setErrorMsg('设备不支持本地精确抠图，请使用快速模式');
+        }
+      }
+    } catch (err) {
+      setDlgVisible(false);
+      try {
+        const outFast = await runFastPreview(img);
         const blob: Blob = await new Promise((resolve, reject) => {
           const c3 = document.createElement('canvas');
           c3.width = outFast.width; c3.height = outFast.height;
@@ -111,7 +159,7 @@ export function BackgroundRemover() {
     a.click();
   };
 
-  return (
+      return (
         <RetroWindow title="抠图智能化工具">
           <div className="p-6 space-y-6">
             <LocalModelInitDialog visible={dlgVisible} stage={dlgStage} progress={dlgProgress} errorMessage={dlgError} />

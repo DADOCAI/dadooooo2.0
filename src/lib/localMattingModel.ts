@@ -15,6 +15,7 @@ export async function ensureModelLoaded(update?: Update) {
   env.wasm = env.wasm || {}
   env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/'
   env.wasm.numThreads = Math.max(1, Math.min(4, (navigator as any).hardwareConcurrency || 2))
+  env.wasm.proxy = true
 
   update?.('downloading', 0)
 
@@ -75,7 +76,9 @@ async function getModelBytes(update?: Update): Promise<Uint8Array> {
   const candidates = [
     '/models/u2netp.onnx',
     '/models/u2net.onnx',
-    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx'
+    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx',
+    'https://huggingface.co/danielgatis/rembg/resolve/main/u2netp.onnx',
+    'https://huggingface.co/bunnio/rembg-models/resolve/main/u2netp.onnx'
   ]
 
   for (const url of candidates) {
