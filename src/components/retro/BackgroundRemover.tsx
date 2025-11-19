@@ -94,6 +94,7 @@ export function BackgroundRemover() {
         setProcessedImage(url2);
       } catch (errPrecise) {
         preciseReady = false;
+        setModelLoading(false);
       }
       if (!preciseReady) {
         try {
@@ -146,6 +147,7 @@ export function BackgroundRemover() {
       }
     } finally {
       setIsProcessing(false);
+      setModelLoading(false);
     }
   };
 
@@ -287,8 +289,8 @@ export function BackgroundRemover() {
 
         {/* Action Buttons */}
         <div className="flex gap-4 justify-center">
-          <RetroButton onClick={handleProcess} disabled={!selectedImage || isProcessing || modelLoading} className="px-8 py-3 text-lg">
-            {isProcessing ? '处理中...' : (modelLoading ? '正在加载模型，首次可能需要10-30秒' : '开始抠图')}
+          <RetroButton onClick={handleProcess} disabled={!selectedImage || isProcessing} className="px-8 py-3 text-lg">
+            {isProcessing ? '处理中...' : (modelLoading && !processedImage ? '正在加载模型，首次可能需要10-30秒' : '开始抠图')}
           </RetroButton>
           {processedImage && (
             <RetroButton onClick={handleDownload} className="px-8 py-3 text-lg">
