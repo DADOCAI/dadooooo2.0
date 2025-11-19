@@ -9,45 +9,46 @@ type Update = (stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: 
 export async function ensureModelLoaded(update?: Update) {
   if (session) return session
   if (creating) return creating
-  const url = '/models/u2net.onnx'
-  const eps = ['webgpu', 'wasm']
+
+  // Ensure ORT can locate wasm binaries even when bundler doesn't serve them
+  const env: any = (ort as any).env
+  env.wasm = env.wasm || {}
+  env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/'
+  env.wasm.numThreads = Math.max(1, Math.min(4, (navigator as any).hardwareConcurrency || 2))
+
   update?.('downloading', 0)
+
+  const modelBytes = await getModelBytes(update)
+
   creating = (async () => {
     // WebGPU first
     try {
       if (typeof (navigator as any).gpu !== 'undefined') {
         update?.('loading', undefined)
-        const s = await ort.InferenceSession.create(url, { executionProviders: ['webgpu'] })
+        const s = await ort.InferenceSession.create(modelBytes, { executionProviders: ['webgpu'] })
         session = s
         backend = 'webgpu'
-        console.log('onnx session created', { ep: 'webgpu' })
         update?.('ready', 1)
         return s
       }
     } catch (e) { console.warn('webgpu init failed', e) }
     // WASM SIMD
     try {
-      ;(ort as any).env = (ort as any).env || {}
-      ;(ort as any).env.wasm = (ort as any).env.wasm || {}
       ;(ort as any).env.wasm.simd = true
       update?.('loading', undefined)
-      const s = await ort.InferenceSession.create(url, { executionProviders: ['wasm'] })
+      const s = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] })
       session = s
       backend = 'wasm-simd'
-      console.log('onnx session created', { ep: 'wasm-simd' })
       update?.('ready', 1)
       return s
     } catch (e) { console.warn('wasm simd init failed', e) }
     // Plain WASM
     try {
-      ;(ort as any).env = (ort as any).env || {}
-      ;(ort as any).env.wasm = (ort as any).env.wasm || {}
       ;(ort as any).env.wasm.simd = false
       update?.('loading', undefined)
-      const s = await ort.InferenceSession.create(url, { executionProviders: ['wasm'] })
+      const s = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] })
       session = s
       backend = 'wasm'
-      console.log('onnx session created', { ep: 'wasm' })
       update?.('ready', 1)
       return s
     } catch (e) { console.warn('plain wasm init failed', e) }
@@ -57,6 +58,64 @@ export async function ensureModelLoaded(update?: Update) {
     throw new Error(err)
   })()
   return creating
+}
+
+async function getModelBytes(update?: Update): Promise<Uint8Array> {
+  // Try CacheStorage first
+  try {
+    const cache = await (caches as any).open('dadoooo-models')
+    const cached = await cache.match('model:u2netp')
+    if (cached) {
+      const buf = new Uint8Array(await cached.arrayBuffer())
+      update?.('ready', 1)
+      return buf
+    }
+  } catch {}
+
+  const candidates = [
+    '/models/u2netp.onnx',
+    '/models/u2net.onnx',
+    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx'
+  ]
+
+  for (const url of candidates) {
+    try {
+      const buf = await downloadAsUint8Array(url, update)
+      try {
+        const cache = await (caches as any).open('dadoooo-models')
+        await cache.put('model:u2netp', new Response(buf))
+      } catch {}
+      return buf
+    } catch (e) { console.warn('model download failed', url, e) }
+  }
+  throw new Error('model_not_found')
+}
+
+async function downloadAsUint8Array(url: string, update?: Update): Promise<Uint8Array> {
+  const resp = await fetch(url, { mode: 'cors' })
+  if (!resp.ok) throw new Error('http_' + resp.status)
+  const total = Number(resp.headers.get('content-length') || 0)
+  if (resp.body && total > 0 && typeof (ReadableStream) !== 'undefined') {
+    const reader = resp.body.getReader()
+    const chunks: Uint8Array[] = []
+    let loaded = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        chunks.push(value)
+        loaded += value.length
+        update?.('downloading', total ? loaded / total : undefined)
+      }
+    }
+    const out = new Uint8Array(loaded)
+    let offset = 0
+    for (const ch of chunks) { out.set(ch, offset); offset += ch.length }
+    return out
+  } else {
+    const arr = new Uint8Array(await resp.arrayBuffer())
+    return arr
+  }
 }
 
 export async function runMatting(imageData: ImageData): Promise<ImageData> {
