@@ -3,7 +3,7 @@ import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
 import LocalModelInitDialog from '../common/LocalModelInitDialog';
-import { ensureModelLoaded, runMatting } from '../../lib/localMattingModel';
+import { ensureModelLoaded, runMatting, getBackend, runFastPreview } from '../../lib/localMattingModel';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -21,6 +21,7 @@ export function BackgroundRemover() {
   const [dlgStage, setDlgStage] = useState<string | undefined>(undefined);
   const [dlgProgress, setDlgProgress] = useState<number | undefined>(undefined);
   const [dlgError, setDlgError] = useState<string | undefined>(undefined);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,6 +61,10 @@ export function BackgroundRemover() {
       setModelLoading(true);
       const outId = await runMatting(img);
       setModelLoading(false);
+      const be = getBackend();
+      if (be === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
+      else if (be === 'wasm-simd') setStatusMsg('正在使用极速模式');
+      else if (be === 'wasm') setStatusMsg('兼容模式，速度略慢');
       const blob: Blob = await new Promise((resolve, reject) => {
         const c2 = document.createElement('canvas');
         c2.width = outId.width; c2.height = outId.height;
@@ -70,7 +75,20 @@ export function BackgroundRemover() {
       setProcessedImage(url2);
     } catch (err) {
       setDlgVisible(false);
-      setErrorMsg('设备不支持本地精确抠图，请使用快速模式');
+      try {
+        const outFast = await runFastPreview(img);
+        const blob: Blob = await new Promise((resolve, reject) => {
+          const c3 = document.createElement('canvas');
+          c3.width = outFast.width; c3.height = outFast.height;
+          c3.getContext('2d')!.putImageData(outFast, 0, 0);
+          c3.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+        });
+        const url3 = URL.createObjectURL(blob);
+        setProcessedImage(url3);
+        setStatusMsg('您的设备暂不支持本地抠图，已为您自动切换到快速模式');
+      } catch {
+        setErrorMsg('设备不支持本地精确抠图，请使用快速模式');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -184,6 +202,9 @@ export function BackgroundRemover() {
               <p className="text-gray-500 text-center">
                 {isProcessing ? '处理中...' : (selectedImage ? '等待处理...' : '处理结果将显示在这里')}
               </p>
+              {statusMsg && (
+                <p className="text-gray-600 text-center mt-2">{statusMsg}</p>
+              )}
               {errorMsg && (
                 <p className="text-red-600 text-center mt-2">{errorMsg}</p>
               )}

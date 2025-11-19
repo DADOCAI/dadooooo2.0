@@ -2,6 +2,7 @@ import * as ort from 'onnxruntime-web'
 
 let session: ort.InferenceSession | null = null
 let creating: Promise<ort.InferenceSession> | null = null
+let backend: 'webgpu' | 'wasm-simd' | 'wasm' | 'fast' | undefined
 
 type Update = (stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: number, errorMessage?: string) => void
 
@@ -9,20 +10,49 @@ export async function ensureModelLoaded(update?: Update) {
   if (session) return session
   if (creating) return creating
   const url = '/models/u2net.onnx'
-  const eps = ['webgpu', 'webgl', 'wasm']
+  const eps = ['webgpu', 'wasm']
   update?.('downloading', 0)
   creating = (async () => {
-    for (const ep of eps) {
-      try {
+    // WebGPU first
+    try {
+      if (typeof (navigator as any).gpu !== 'undefined') {
         update?.('loading', undefined)
-        const s = await ort.InferenceSession.create(url, { executionProviders: [ep] })
-        console.log('onnx session created', { ep })
+        const s = await ort.InferenceSession.create(url, { executionProviders: ['webgpu'] })
         session = s
+        backend = 'webgpu'
+        console.log('onnx session created', { ep: 'webgpu' })
         update?.('ready', 1)
         return s
-      } catch (e) {}
-    }
+      }
+    } catch (e) { console.warn('webgpu init failed', e) }
+    // WASM SIMD
+    try {
+      ;(ort as any).env = (ort as any).env || {}
+      ;(ort as any).env.wasm = (ort as any).env.wasm || {}
+      ;(ort as any).env.wasm.simd = true
+      update?.('loading', undefined)
+      const s = await ort.InferenceSession.create(url, { executionProviders: ['wasm'] })
+      session = s
+      backend = 'wasm-simd'
+      console.log('onnx session created', { ep: 'wasm-simd' })
+      update?.('ready', 1)
+      return s
+    } catch (e) { console.warn('wasm simd init failed', e) }
+    // Plain WASM
+    try {
+      ;(ort as any).env = (ort as any).env || {}
+      ;(ort as any).env.wasm = (ort as any).env.wasm || {}
+      ;(ort as any).env.wasm.simd = false
+      update?.('loading', undefined)
+      const s = await ort.InferenceSession.create(url, { executionProviders: ['wasm'] })
+      session = s
+      backend = 'wasm'
+      console.log('onnx session created', { ep: 'wasm' })
+      update?.('ready', 1)
+      return s
+    } catch (e) { console.warn('plain wasm init failed', e) }
     const err = 'unsupported'
+    backend = 'fast'
     update?.('error', undefined, err)
     throw new Error(err)
   })()
@@ -104,6 +134,23 @@ export async function runMatting(imageData: ImageData): Promise<ImageData> {
   return outId
 }
 
+export function getBackend() { return backend }
+
+export async function runFastPreview(imageData: ImageData): Promise<ImageData> {
+  const { width, height, data } = imageData
+  const bg = estimateBackgroundColor(imageData)
+  const alpha = computeAlphaMask(imageData, bg)
+  const refined = refineAlpha(alpha, width, height, { morphRadius: 1, featherRadius: 2 })
+  const out = new ImageData(width, height)
+  for (let i = 0, p = 0; i < width * height; i++, p += 4) {
+    out.data[p] = data[p]
+    out.data[p + 1] = data[p + 1]
+    out.data[p + 2] = data[p + 2]
+    out.data[p + 3] = refined[i]
+  }
+  return out
+}
+
 function blurAlpha(alpha: Uint8ClampedArray, w: number, h: number, r: number) {
   const out = new Uint8ClampedArray(alpha.length)
   const rs = Math.max(1, r)
@@ -172,4 +219,53 @@ function erode(src: Uint8ClampedArray, w: number, h: number, r: number) {
     }
   }
   return out
+}
+
+function estimateBackgroundColor(img: ImageData) {
+  const { data, width, height } = img
+  let r = 0, g = 0, b = 0, n = 0
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 50))
+  for (let x = 0; x < width; x += step) {
+    const iTop = (0 * width + x) * 4
+    const iBot = ((height - 1) * width + x) * 4
+    r += data[iTop]; g += data[iTop + 1]; b += data[iTop + 2]; n++
+    r += data[iBot]; g += data[iBot + 1]; b += data[iBot + 2]; n++
+  }
+  for (let y = 0; y < height; y += step) {
+    const iL = (y * width + 0) * 4
+    const iR = (y * width + (width - 1)) * 4
+    r += data[iL]; g += data[iL + 1]; b += data[iL + 2]; n++
+    r += data[iR]; g += data[iR + 1]; b += data[iR + 2]; n++
+  }
+  return [r / n, g / n, b / n]
+}
+
+function computeAlphaMask(img: ImageData, bg: number[]) {
+  const { data, width, height } = img
+  const alpha = new Uint8ClampedArray(width * height)
+  const dists: number[] = []
+  for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 64))) {
+    for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 64))) {
+      const i = (y * width + x) * 4
+      const dr = data[i] - bg[0]
+      const dg = data[i + 1] - bg[1]
+      const db = data[i + 2] - bg[2]
+      dists.push(Math.sqrt(dr * dr + dg * dg + db * db))
+    }
+  }
+  dists.sort((a, b) => a - b)
+  const tLow = dists[Math.max(0, Math.floor(dists.length * 0.2))] + 5
+  const tHigh = dists[Math.max(0, Math.floor(dists.length * 0.5))] + 20
+  for (let iPix = 0, p = 0; iPix < width * height; iPix++, p += 4) {
+    const dr = data[p] - bg[0]
+    const dg = data[p + 1] - bg[1]
+    const db = data[p + 2] - bg[2]
+    const d = Math.sqrt(dr * dr + dg * dg + db * db)
+    let a = 0
+    if (d <= tLow) a = 0
+    else if (d >= tHigh) a = 255
+    else a = Math.round(((d - tLow) / (tHigh - tLow)) * 255)
+    alpha[iPix] = a
+  }
+  return alpha
 }
