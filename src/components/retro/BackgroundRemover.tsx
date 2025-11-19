@@ -24,6 +24,17 @@ export function BackgroundRemover() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setDlgVisible(true);
+    setDlgStage('downloading');
+    setDlgProgress(undefined);
+    setDlgError(undefined);
+    ModelManager.preload((s, p, e) => {
+      setDlgStage(s); setDlgProgress(p); setDlgError(e);
+      if (s === 'ready') setDlgVisible(false);
+    });
+  }, []);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -41,6 +52,7 @@ export function BackgroundRemover() {
     if (!selectedFile) return;
     setIsProcessing(true);
     setErrorMsg(null);
+    let img: ImageData | undefined;
     try {
       const bmp = await createImageBitmap(selectedFile);
       const maxSide = 2048;
@@ -51,7 +63,7 @@ export function BackgroundRemover() {
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(bmp, 0, 0, w, h);
-      const img = ctx.getImageData(0, 0, w, h);
+      img = ctx.getImageData(0, 0, w, h);
       setModelLoading(true);
       const outId = mode === 'precise' ? await ModelManager.runPrecise(img) : await ModelManager.runFast(img);
       setModelLoading(false);
@@ -70,6 +82,7 @@ export function BackgroundRemover() {
       setProcessedImage(url2);
     } catch (err) {
       try {
+        if (!img) throw new Error('no_image');
         const outFast = await ModelManager.runFast(img);
         const blob: Blob = await new Promise((resolve, reject) => {
           const c3 = document.createElement('canvas');
@@ -98,7 +111,7 @@ export function BackgroundRemover() {
     a.click();
   };
 
-      return (
+  return (
         <RetroWindow title="抠图智能化工具">
           <div className="p-6 space-y-6">
             <LocalModelInitDialog visible={dlgVisible} stage={dlgStage} progress={dlgProgress} errorMessage={dlgError} />
@@ -255,13 +268,3 @@ export function BackgroundRemover() {
     </RetroWindow>
   );
 }
-  useEffect(() => {
-    setDlgVisible(true);
-    setDlgStage('downloading');
-    setDlgProgress(undefined);
-    setDlgError(undefined);
-    ModelManager.preload((s, p, e) => {
-      setDlgStage(s); setDlgProgress(p); setDlgError(e);
-      if (s === 'ready') setDlgVisible(false);
-    });
-  }, []);
