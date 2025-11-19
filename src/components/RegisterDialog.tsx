@@ -19,8 +19,17 @@ export function RegisterDialog() {
     if (password !== confirmPassword) { setMessage("两次密码不一致"); return; }
     const r = await register(email, password);
     try { setPrefillEmail(email); } catch {}
-    if (r.ok) setMessage("验证链接已发送，请到邮箱点击链接完成注册");
-    else setMessage(r.error || "发送失败");
+    if (r.ok) { setMessage("验证链接已发送，请到邮箱点击链接完成注册"); return; }
+    const raw = (r.error || "").toLowerCase();
+    let zh = "发送失败";
+    if (raw.includes("exist") || raw.includes("already") || raw.includes("duplicate") || raw.includes("registered")) {
+      zh = "该邮箱已注册，无需重复注册";
+    } else if (raw.includes("rate") && raw.includes("limit")) {
+      zh = "请求过于频繁，请稍后再试";
+    } else if (raw.includes("network")) {
+      zh = "网络错误，请稍后重试";
+    }
+    setMessage(zh);
   };
 
   return (

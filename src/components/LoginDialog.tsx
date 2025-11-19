@@ -17,8 +17,15 @@ export function LoginDialog() {
     e.preventDefault();
     setMessage("");
     const r = await login(email, password);
-    if (r.ok) setMessage("登录成功");
-    else setMessage(r.error || "登录失败");
+    if (r.ok) { setMessage("登录成功"); return; }
+    const raw = (r.error || "").toLowerCase();
+    let zh = "登录失败";
+    if (raw.includes("invalid") && raw.includes("password")) zh = "密码错误";
+    else if (raw.includes("not found") || raw.includes("no user") || raw.includes("user not")) zh = "此账号未注册";
+    else if (raw.includes("email not confirmed") || raw.includes("confirm")) zh = "邮箱未验证，请先完成邮箱验证";
+    else if (raw.includes("rate") && raw.includes("limit")) zh = "请求过于频繁，请稍后再试";
+    else if (raw.includes("network")) zh = "网络错误，请稍后重试";
+    setMessage(zh);
   };
 
   return (
