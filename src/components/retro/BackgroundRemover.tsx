@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
 import LocalModelInitDialog from '../common/LocalModelInitDialog';
-import { ensureModelLoaded, runMatting, getBackend, runFastPreview } from '../../lib/localMattingModel';
+import ModelManager from '../../lib/BackgroundRemoverModelManager';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -52,19 +52,14 @@ export function BackgroundRemover() {
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(bmp, 0, 0, w, h);
       const img = ctx.getImageData(0, 0, w, h);
-      setDlgVisible(true);
-      setDlgStage('downloading');
-      setDlgProgress(undefined);
-      setDlgError(undefined);
-      await ensureModelLoaded((s, p, e) => { setDlgStage(s); setDlgProgress(p); setDlgError(e); });
-      setDlgVisible(false);
       setModelLoading(true);
-      const outId = await runMatting(img);
+      const outId = mode === 'precise' ? await ModelManager.runPrecise(img) : await ModelManager.runFast(img);
       setModelLoading(false);
-      const be = getBackend();
+      const be = ModelManager.getBackend();
       if (be === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
       else if (be === 'wasm-simd') setStatusMsg('正在使用极速模式');
       else if (be === 'wasm') setStatusMsg('兼容模式，速度略慢');
+      else if (be === 'fast') setStatusMsg('您的设备暂不支持本地抠图，已为您自动切换到快速模式');
       const blob: Blob = await new Promise((resolve, reject) => {
         const c2 = document.createElement('canvas');
         c2.width = outId.width; c2.height = outId.height;
@@ -74,9 +69,8 @@ export function BackgroundRemover() {
       const url2 = URL.createObjectURL(blob);
       setProcessedImage(url2);
     } catch (err) {
-      setDlgVisible(false);
       try {
-        const outFast = await runFastPreview(img);
+        const outFast = await ModelManager.runFast(img);
         const blob: Blob = await new Promise((resolve, reject) => {
           const c3 = document.createElement('canvas');
           c3.width = outFast.width; c3.height = outFast.height;
@@ -261,3 +255,13 @@ export function BackgroundRemover() {
     </RetroWindow>
   );
 }
+  useEffect(() => {
+    setDlgVisible(true);
+    setDlgStage('downloading');
+    setDlgProgress(undefined);
+    setDlgError(undefined);
+    ModelManager.preload((s, p, e) => {
+      setDlgStage(s); setDlgProgress(p); setDlgError(e);
+      if (s === 'ready') setDlgVisible(false);
+    });
+  }, []);
