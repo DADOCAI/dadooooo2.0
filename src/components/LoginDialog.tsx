@@ -20,8 +20,21 @@ export function LoginDialog() {
     if (r.ok) { setMessage("登录成功"); return; }
     const raw = (r.error || "").toLowerCase();
     let zh = "登录失败";
-    if (raw.includes("invalid") && raw.includes("password")) zh = "密码错误";
-    else if (raw.includes("not found") || raw.includes("no user") || raw.includes("user not")) zh = "此账号未注册";
+    const isPwdErr = (
+      /invalid\s*login\s*credentials/.test(raw) ||
+      /invalid_grant/.test(raw) ||
+      (/invalid/.test(raw) && /password/.test(raw)) ||
+      /wrong\s*password/.test(raw)
+    );
+    const isUserMissing = (
+      /user\s*not\s*found/.test(raw) ||
+      /no\s*user/.test(raw) ||
+      /not\s*registered/.test(raw) ||
+      /email\s*does\s*not\s*exist/.test(raw) ||
+      /invalid\s*email/.test(raw)
+    );
+    if (isPwdErr) zh = "密码错误";
+    else if (isUserMissing) zh = "此账号未注册";
     else if (raw.includes("email not confirmed") || raw.includes("confirm")) zh = "邮箱未验证，请先完成邮箱验证";
     else if (raw.includes("rate") && raw.includes("limit")) zh = "请求过于频繁，请稍后再试";
     else if (raw.includes("network")) zh = "网络错误，请稍后重试";
