@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import logoDefault from '@/assets/logo-globe.svg';
-import logoHover from '@/assets/logo-globe.svg';
+import logoDefault from 'figma:asset/cb7518acee88e4f203be6734e15429ff9c58e4e1.png';
+import logoHover from 'figma:asset/e5c375aeb9d5459e76d1f4b4579b4d2ffbb0055e.png';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Header() {
@@ -33,7 +33,7 @@ export function Header() {
           >
             <img 
               src={isHovered ? logoHover : logoDefault}
-              alt="dadoooo-设计师平台"
+              alt="dado logo"
               className={`h-14 object-contain transition-opacity duration-300 ${
                 isHovered ? 'animate-flicker' : ''
               }`}
