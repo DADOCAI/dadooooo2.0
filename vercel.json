@@ -2,15 +2,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "rewrites": [
-    {
-      "source": "/(.*)",
-      "has": [
-        { "type": "header", "key": "accept", "value": "text/html.*" }
-      ],
-      "missing": [
-        { "type": "file" }
-      ],
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
