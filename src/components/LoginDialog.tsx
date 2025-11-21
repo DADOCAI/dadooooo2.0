@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dial
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useAuth } from "../contexts/AuthContext";
-const logoUrl = new URL('../../80152d42425b82cc253ff3843e4f2093.png', import.meta.url).href;
+const logoUrl = 'D\\dadoooo网站建设\\dadoooo网站\\极简设计师工具网站 (4)\\80152d42425b82cc253ff3843e4f2093.png';
 
 export function LoginDialog() {
   const { showLoginDialog, setShowLoginDialog, login, setShowRegisterDialog, prefillEmail, setPrefillEmail } = useAuth();
