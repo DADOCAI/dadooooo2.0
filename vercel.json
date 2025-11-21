@@ -5,7 +5,10 @@
     {
       "source": "/(.*)",
       "has": [
-        { "type": "header", "key": "accept", "value": "text/html" }
+        { "type": "header", "key": "accept", "value": "text/html.*" }
+      ],
+      "missing": [
+        { "type": "file" }
       ],
       "destination": "/index.html"
     }
