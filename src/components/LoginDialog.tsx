@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dial
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useAuth } from "../contexts/AuthContext";
-import logo from 'figma:asset/cb7518acee88e4f203be6734e15429ff9c58e4e1.png';
+const logoUrl = new URL('../../80152d42425b82cc253ff3843e4f2093.png', import.meta.url).href;
 
 export function LoginDialog() {
   const { showLoginDialog, setShowLoginDialog, login, setShowRegisterDialog, prefillEmail, setPrefillEmail } = useAuth();
@@ -56,7 +56,7 @@ export function LoginDialog() {
             <DialogDescription className="sr-only">登录以使用工具</DialogDescription>
             <div className="ml-2">
               <img 
-                src={logo}
+                src={logoUrl}
                 alt="dado logo"
                 className="h-14 object-contain"
               />

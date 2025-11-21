@@ -65,6 +65,6 @@
             "dev": "vite",
             "build": "vite build",
             "build:ascii": "npm --prefix public/ascii ci && npm --prefix public/ascii run build",
-            "postbuild": "npm run build:ascii && mkdir -p build/ascii && cp -r public/ascii/dist/* build/ascii/ && cp -r public/ascii/assets build/ascii/ && mkdir -p build/models/selfie_segmentation && cp -r node_modules/@mediapipe/selfie_segmentation/* build/models/selfie_segmentation/ && cp -f dadoooo.png build/"
+            "postbuild": "npm run build:ascii && mkdir -p build/ascii && cp -r public/ascii/dist/* build/ascii/ && cp -r public/ascii/assets build/ascii/ && mkdir -p build/models/selfie_segmentation && cp -r node_modules/@mediapipe/selfie_segmentation/* build/models/selfie_segmentation/ && cp -f dadoooo.png build/ && cp -f 80152d42425b82cc253ff3843e4f2093.png build/"
   }
 }
