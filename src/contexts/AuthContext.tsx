@@ -122,32 +122,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 恢复会话 + 监听登录状态变化（用户点击邮箱链接返回网站时会触发）
   useEffect(() => {
     debugSupabaseEnv();
-    const getStored = () => {
-      try {
-        const v = localStorage.getItem(SESSION_KEY);
-        if (!v) return undefined;
-        const s = JSON.parse(v);
-        if (s && typeof s.expiresAt === 'number' && s.expiresAt > Date.now() && typeof s.email === 'string') return s;
-      } catch {}
-      return undefined;
-    };
+    // 中文注释：页面加载时读取当前会话，若已登录则更新顶部显示的用户邮箱
     supabase.auth.getSession().then(({ data }) => {
       const email = data.session?.user?.email;
       if (email) { setIsLoggedIn(true); setUserEmail(email); }
-      else {
-        const s = getStored();
-        if (s) { setIsLoggedIn(true); setUserEmail(s.email); }
-      }
     });
     // 中文注释：监听登录状态变化；用户从邮箱点击链接回来后会触发，随后更新登录态与邮箱
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       const email = session?.user?.email;
       if (email) { setIsLoggedIn(true); setUserEmail(email); }
-      else {
-        const s = getStored();
-        if (s) { setIsLoggedIn(true); setUserEmail(s.email); }
-        else { setIsLoggedIn(false); setUserEmail(undefined); }
-      }
+      else { setIsLoggedIn(false); setUserEmail(undefined); }
       try {
         const rf = localStorage.getItem('dado.auth.registrationFlow');
         const re = localStorage.getItem('dado.auth.registrationEmail') || undefined;

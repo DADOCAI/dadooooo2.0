@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dial
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useAuth } from "../contexts/AuthContext";
-const logoUrl = '/80152d42425b82cc253ff3843e4f2093.png';
+import logo from 'figma:asset/e5c375aeb9d5459e76d1f4b4579b4d2ffbb0055e.png';
 
 export function RegisterDialog() {
   const { showRegisterDialog, setShowRegisterDialog, register, setShowLoginDialog, setPrefillEmail } = useAuth();
@@ -47,7 +47,7 @@ export function RegisterDialog() {
             <DialogDescription className="sr-only">创建新账号</DialogDescription>
             <div className="ml-2">
               <img 
-                src={logoUrl}
+                src={logo}
                 alt="dado logo"
                 className="h-14 object-contain"
               />

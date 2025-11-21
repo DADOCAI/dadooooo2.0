@@ -2,7 +2,7 @@
 
 @font-face {
   font-family: 'ArkibalSerif';
-  src: url('/ascii/assets/ArkibalSerif-Regular.otf') format('opentype');
+  src: url('/ascii-app/assets/ArkibalSerif-Regular.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
