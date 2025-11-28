@@ -143,8 +143,9 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     }
   }
   const alphaBig = scaleAlphaNearest(mSmall, target, target, w0, h0)
-  const meanT = computeMeanThreshold(alphaBig)
-  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 1, threshold: meanT })
+  const otsuT = computeOtsuThreshold(alphaBig)
+  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 1, threshold: otsuT })
+  refined = largestComponent(refined, w0, h0)
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
     outRgba[p4] = rgba[pSrc]
@@ -279,11 +280,66 @@ function close(src: Uint8ClampedArray, w: number, h: number, r: number) {
   return erode(dilate(src, w, h, r), w, h, r)
 }
 
-function computeMeanThreshold(alpha: Uint8ClampedArray) {
-  let s = 0
-  for (let i = 0; i < alpha.length; i++) s += alpha[i]
-  const mean = s / alpha.length
-  return Math.max(32, Math.min(224, Math.round(mean)))
+function computeOtsuThreshold(alpha: Uint8ClampedArray) {
+  const hist = new Uint32Array(256)
+  let total = 0
+  for (let i = 0; i < alpha.length; i++) { const v = alpha[i]; hist[v]++; total++ }
+  let sum = 0
+  for (let i = 0; i < 256; i++) sum += i * hist[i]
+  let sumB = 0, wB = 0, wF = 0
+  let maxVar = -1, t = 128
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i]
+    if (wB === 0) continue
+    wF = total - wB
+    if (wF === 0) break
+    sumB += i * hist[i]
+    const mB = sumB / wB
+    const mF = (sum - sumB) / wF
+    const between = wB * wF * (mB - mF) * (mB - mF)
+    if (between > maxVar) { maxVar = between; t = i }
+  }
+  return Math.max(32, Math.min(224, t))
+}
+
+function largestComponent(bin: Uint8ClampedArray, w: number, h: number) {
+  const visited = new Uint8Array(bin.length)
+  const stackX = new Int32Array(bin.length)
+  const stackY = new Int32Array(bin.length)
+  let bestCount = 0, bestMask: Uint8ClampedArray | null = null
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x
+      if (visited[idx] || bin[idx] === 0) continue
+      let top = 0, count = 0
+      const mask = new Uint8ClampedArray(bin.length)
+      stackX[top] = x; stackY[top] = y; top++
+      visited[idx] = 1
+      while (top > 0) {
+        top--
+        const cx = stackX[top], cy = stackY[top]
+        const cidx = cy * w + cx
+        if (mask[cidx] === 255) continue
+        mask[cidx] = 255
+        count++
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue
+            const nx = cx + dx, ny = cy + dy
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+            const nidx = ny * w + nx
+            if (visited[nidx]) continue
+            if (bin[nidx] === 0) continue
+            visited[nidx] = 1
+            stackX[top] = nx; stackY[top] = ny; top++
+          }
+        }
+      }
+      if (count > bestCount) { bestCount = count; bestMask = mask }
+    }
+  }
+  if (!bestMask) return bin
+  return bestMask
 }
 
 ;(self as any).onmessage = async (ev: MessageEvent<Req>) => {
