@@ -51,6 +51,44 @@ async function idbPut(key: string, bytes: Uint8Array): Promise<void> {
     })
   } catch {}
 }
+
+async function idbOpen(): Promise<IDBDatabase> {
+  return await new Promise((resolve, reject) => {
+    const req = indexedDB.open('isnet-model-cache', 1)
+    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains('models')) db.createObjectStore('models') }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function idbGet(key: string): Promise<Uint8Array | null> {
+  try {
+    const db = await idbOpen()
+    return await new Promise((resolve) => {
+      const tx = db.transaction('models', 'readonly')
+      const store = tx.objectStore('models')
+      const req = store.get(key)
+      req.onsuccess = () => {
+        const v = req.result as ArrayBuffer | undefined
+        resolve(v ? new Uint8Array(v) : null)
+      }
+      req.onerror = () => resolve(null)
+    })
+  } catch { return null }
+}
+
+async function idbPut(key: string, bytes: Uint8Array): Promise<void> {
+  try {
+    const db = await idbOpen()
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('models', 'readwrite')
+      const store = tx.objectStore('models')
+      const req = store.put(bytes.buffer, key)
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+    })
+  } catch {}
+}
 function postProgress(stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: number, errorMessage?: string) {
   ;(self as any).postMessage({ type: 'progress', stage, progress, errorMessage } as Res)
 }
@@ -68,7 +106,7 @@ async function ensureModelLoaded(update?: Update) {
 
   update?.('downloading', 0)
 
-  const modelBytes = await getModelBytes(update)
+  const modelBytes = await getModelBytesCached(update)
 
   creating = (async () => {
     try {
@@ -179,7 +217,7 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     outRgba[p4] = rgba[pSrc]
     outRgba[p4 + 1] = rgba[pSrc + 1]
     outRgba[p4 + 2] = rgba[pSrc + 2]
-    outRgba[p4 + 3] = Math.max(0, Math.min(255, Math.round(alphaBigF[i] * 255)))
+    outRgba[p4 + 3] = alphaBigF[i] >= 0.5 ? 255 : 0
   }
   return outRgba
 }
@@ -408,4 +446,22 @@ function largestComponent(bin: Uint8ClampedArray, w: number, h: number) {
   } catch (e: any) {
     ;(self as any).postMessage({ type: 'error', jobId: (msg as any).jobId || 0, errorMessage: e && e.message ? String(e.message) : 'error' } as Res)
   }
+}
+
+async function getModelBytesCached(update?: Update): Promise<Uint8Array> {
+  const candidates = [
+    'https://huggingface.co/jellybox/isnet-general-use/resolve/main/isnet-general-use.onnx',
+    'https://huggingface.co/x-Liola-x/isnet-general-use-onnx/resolve/main/isnet-general-use.onnx'
+  ]
+  for (const url of candidates) {
+    try {
+      const cached = await idbGet(url)
+      if (cached && cached.byteLength > 0) return cached
+      const buf = await downloadAsUint8Array(url, update)
+      await idbPut(url, buf)
+      return buf
+    } catch (e) {}
+  }
+  update?.('error', undefined, '模型下载失败或不可用')
+  throw new Error('model_not_found')
 }
