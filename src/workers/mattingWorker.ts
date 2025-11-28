@@ -143,9 +143,8 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     }
   }
   const alphaBig = scaleAlphaNearest(mSmall, target, target, w0, h0)
-  // 更强的后处理：开运算 + 闭运算 + 羽化，减少小残留与孔洞
-  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 3, threshold: 96 })
-  refined = close(refined, w0, h0, 1)
+  const meanT = computeMeanThreshold(alphaBig)
+  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 1, threshold: meanT })
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
     outRgba[p4] = rgba[pSrc]
@@ -278,6 +277,13 @@ function erode(src: Uint8ClampedArray, w: number, h: number, r: number) {
 
 function close(src: Uint8ClampedArray, w: number, h: number, r: number) {
   return erode(dilate(src, w, h, r), w, h, r)
+}
+
+function computeMeanThreshold(alpha: Uint8ClampedArray) {
+  let s = 0
+  for (let i = 0; i < alpha.length; i++) s += alpha[i]
+  const mean = s / alpha.length
+  return Math.max(32, Math.min(224, Math.round(mean)))
 }
 
 ;(self as any).onmessage = async (ev: MessageEvent<Req>) => {
