@@ -14,43 +14,7 @@ let session: ort.InferenceSession | null = null
 let creating: Promise<ort.InferenceSession> | null = null
 let modelType: 'isnet' = 'isnet'
 
-async function idbOpen(): Promise<IDBDatabase> {
-  return await new Promise((resolve, reject) => {
-    const req = indexedDB.open('isnet-model-cache', 1)
-    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains('models')) db.createObjectStore('models') }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function idbGet(key: string): Promise<Uint8Array | null> {
-  try {
-    const db = await idbOpen()
-    return await new Promise((resolve) => {
-      const tx = db.transaction('models', 'readonly')
-      const store = tx.objectStore('models')
-      const req = store.get(key)
-      req.onsuccess = () => {
-        const v = req.result as ArrayBuffer | undefined
-        resolve(v ? new Uint8Array(v) : null)
-      }
-      req.onerror = () => resolve(null)
-    })
-  } catch { return null }
-}
-
-async function idbPut(key: string, bytes: Uint8Array): Promise<void> {
-  try {
-    const db = await idbOpen()
-    await new Promise<void>((resolve) => {
-      const tx = db.transaction('models', 'readwrite')
-      const store = tx.objectStore('models')
-      const req = store.put(bytes.buffer, key)
-      req.onsuccess = () => resolve()
-      req.onerror = () => resolve()
-    })
-  } catch {}
-}
+ 
 
 async function idbOpen(): Promise<IDBDatabase> {
   return await new Promise((resolve, reject) => {
