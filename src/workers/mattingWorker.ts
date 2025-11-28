@@ -51,8 +51,8 @@ async function ensureModelLoaded(update?: Update) {
 
 async function getModelBytes(update?: Update): Promise<Uint8Array> {
   const candidates = [
-    // ISNet（general-use）质量更稳，尺寸适中（约 26-30MB）
-    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx',
+    // ISNet（general-use）高质量抠图模型（约 179MB）——使用 Hugging Face 以避免 GitHub Releases 的 CORS 限制
+    'https://huggingface.co/jellybox/isnet-general-use/resolve/main/isnet-general-use.onnx',
     // BRIA RMBG-1.4 高质量抠图模型（约 31MB）
     'https://huggingface.co/briaai/RMBG-1.4/resolve/main/model.onnx',
     // 备用：U2Netp 轻量模型（约 4.6MB）
@@ -63,8 +63,8 @@ async function getModelBytes(update?: Update): Promise<Uint8Array> {
     try {
       const buf = await downloadAsUint8Array(url, update)
       // 粗略判断文件大小以区分模型类型
-      if (buf.byteLength > 20_000_000 && buf.byteLength < 40_000_000) modelType = 'isnet'
-      else if (buf.byteLength >= 40_000_000 || buf.byteLength > 10_000_000) modelType = 'rmbg'
+      if (buf.byteLength > 120_000_000) modelType = 'isnet'
+      else if (buf.byteLength > 10_000_000) modelType = 'rmbg'
       else modelType = 'u2netp'
       return buf
     } catch (e) {}
