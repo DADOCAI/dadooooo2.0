@@ -18,6 +18,11 @@ export async function ensureModelLoaded(update?: Update) {
   env.wasm.proxy = false
   env.wasm.simd = false
 
+  if (typeof window !== 'undefined' && window.self !== window.top) {
+    update?.('error', undefined, '请在顶层窗口打开此页面以启用本地模型')
+    throw new Error('not_top_window')
+  }
+
   update?.('downloading', 0)
 
   const modelBytes = await getModelBytes(update)
@@ -74,7 +79,12 @@ async function getModelBytes(update?: Update): Promise<Uint8Array> {
 }
 
 async function downloadAsUint8Array(url: string, update?: Update): Promise<Uint8Array> {
-  const resp = await fetch(url, { mode: 'cors' })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 25000)
+  let resp: Response
+  try {
+    resp = await fetch(url, { mode: 'cors', signal: controller.signal })
+  } finally { clearTimeout(timeout) }
   if (!resp.ok) throw new Error('http_' + resp.status)
   const total = Number(resp.headers.get('content-length') || 0)
   if (resp.body && total > 0 && typeof (ReadableStream) !== 'undefined') {
