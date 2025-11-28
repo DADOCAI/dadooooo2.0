@@ -12,6 +12,7 @@ type Res =
 
 let session: ort.InferenceSession | null = null
 let creating: Promise<ort.InferenceSession> | null = null
+let modelType: 'rmbg' | 'u2netp' = 'rmbg'
 
 function postProgress(stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: number, errorMessage?: string) {
   ;(self as any).postMessage({ type: 'progress', stage, progress, errorMessage } as Res)
@@ -50,12 +51,17 @@ async function ensureModelLoaded(update?: Update) {
 
 async function getModelBytes(update?: Update): Promise<Uint8Array> {
   const candidates = [
+    // BRIA RMBG-1.4 高质量抠图模型（约 31MB）
+    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/model.onnx',
+    // 备用：U2Netp 轻量模型
     'https://huggingface.co/jilijeanlouis/test-u2net/resolve/main/u2netp.onnx',
     'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx'
   ]
   for (const url of candidates) {
     try {
       const buf = await downloadAsUint8Array(url, update)
+      // 粗略判断文件大小以区分模型类型
+      if (buf.byteLength > 10_000_000) modelType = 'rmbg'; else modelType = 'u2netp'
       return buf
     } catch (e) {}
   }
@@ -99,16 +105,21 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   if (!session) throw new Error('session_not_ready')
   const w0 = width
   const h0 = height
-  const target = 320
+  const target = modelType === 'rmbg' ? 1024 : 320
   const chw = new Float32Array(1 * 3 * target * target)
   const tmp = resizeRgbaToSquare(rgba, w0, h0, target)
+  const mean = modelType === 'rmbg' ? [0.485, 0.456, 0.406] : [0, 0, 0]
+  const std = modelType === 'rmbg' ? [0.229, 0.224, 0.225] : [1, 1, 1]
   for (let y = 0; y < target; y++) {
     for (let x = 0; x < target; x++) {
       const idx = y * target + x
       const i = idx * 4
-      chw[0 * target * target + idx] = tmp[i] / 255
-      chw[1 * target * target + idx] = tmp[i + 1] / 255
-      chw[2 * target * target + idx] = tmp[i + 2] / 255
+      const r = tmp[i] / 255
+      const g = tmp[i + 1] / 255
+      const b = tmp[i + 2] / 255
+      chw[0 * target * target + idx] = (r - mean[0]) / std[0]
+      chw[1 * target * target + idx] = (g - mean[1]) / std[1]
+      chw[2 * target * target + idx] = (b - mean[2]) / std[2]
     }
   }
   const inputName = session.inputNames ? session.inputNames[0] : 'input'
@@ -125,11 +136,13 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const mSmall = new Uint8ClampedArray(target * target)
   for (let i = 0; i < mSmall.length; i++) {
     const v = (out as any)[i]
+    // RMBG 输出通常在 [0,1]，仍按 0-255 映射
     const a = Math.max(0, Math.min(255, Math.round((typeof v === 'number' ? v : Number(v)) * 255)))
     mSmall[i] = a
   }
   const alphaBig = scaleAlphaNearest(mSmall, target, target, w0, h0)
-  const refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 2, featherRadius: 2 })
+  // 更强的后处理：加大羽化半径并自适应边缘修正
+  const refined = refineAlpha(alphaBig, w0, h0, { morphRadius: modelType === 'rmbg' ? 1 : 2, featherRadius: modelType === 'rmbg' ? 3 : 2 })
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
     outRgba[p4] = rgba[pSrc]
@@ -280,4 +293,3 @@ function erode(src: Uint8ClampedArray, w: number, h: number, r: number) {
     ;(self as any).postMessage({ type: 'error', jobId: (msg as any).jobId || 0, errorMessage: e && e.message ? String(e.message) : 'error' } as Res)
   }
 }
-
