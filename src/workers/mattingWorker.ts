@@ -12,7 +12,7 @@ type Res =
 
 let session: ort.InferenceSession | null = null
 let creating: Promise<ort.InferenceSession> | null = null
-let modelType: 'isnet' | 'rmbg' | 'u2netp' = 'rmbg'
+let modelType: 'isnet' = 'isnet'
 
 function postProgress(stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: number, errorMessage?: string) {
   ;(self as any).postMessage({ type: 'progress', stage, progress, errorMessage } as Res)
@@ -51,21 +51,12 @@ async function ensureModelLoaded(update?: Update) {
 
 async function getModelBytes(update?: Update): Promise<Uint8Array> {
   const candidates = [
-    // ISNet（general-use）高质量抠图模型（约 179MB）——使用 Hugging Face 以避免 GitHub Releases 的 CORS 限制
     'https://huggingface.co/jellybox/isnet-general-use/resolve/main/isnet-general-use.onnx',
-    // BRIA RMBG-1.4 高质量抠图模型（约 31MB）
-    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/model.onnx',
-    // 备用：U2Netp 轻量模型（约 4.6MB）
-    'https://huggingface.co/jilijeanlouis/test-u2net/resolve/main/u2netp.onnx',
-    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx'
+    'https://huggingface.co/x-Liola-x/isnet-general-use-onnx/resolve/main/isnet-general-use.onnx'
   ]
   for (const url of candidates) {
     try {
       const buf = await downloadAsUint8Array(url, update)
-      // 粗略判断文件大小以区分模型类型
-      if (buf.byteLength > 120_000_000) modelType = 'isnet'
-      else if (buf.byteLength > 10_000_000) modelType = 'rmbg'
-      else modelType = 'u2netp'
       return buf
     } catch (e) {}
   }
@@ -109,11 +100,11 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   if (!session) throw new Error('session_not_ready')
   const w0 = width
   const h0 = height
-  const target = (modelType === 'rmbg' || modelType === 'isnet') ? 1024 : 320
+  const target = 1024
   const chw = new Float32Array(1 * 3 * target * target)
   const tmp = resizeRgbaToSquare(rgba, w0, h0, target)
-  const mean = (modelType === 'rmbg' || modelType === 'isnet') ? [0.485, 0.456, 0.406] : [0, 0, 0]
-  const std = (modelType === 'rmbg' || modelType === 'isnet') ? [0.229, 0.224, 0.225] : [1, 1, 1]
+  const mean = [0.485, 0.456, 0.406]
+  const std = [0.229, 0.224, 0.225]
   for (let y = 0; y < target; y++) {
     for (let x = 0; x < target; x++) {
       const idx = y * target + x
@@ -146,7 +137,7 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   }
   const alphaBig = scaleAlphaNearest(mSmall, target, target, w0, h0)
   // 更强的后处理：开运算 + 闭运算 + 羽化，减少小残留与孔洞
-  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: modelType === 'u2netp' ? 2 : 1, featherRadius: modelType === 'u2netp' ? 2 : 3 })
+  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 3 })
   refined = close(refined, w0, h0, 1)
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
