@@ -13,9 +13,10 @@ export async function ensureModelLoaded(update?: Update) {
   // Ensure ORT can locate wasm binaries even when bundler doesn't serve them
   const env: any = (ort as any).env
   env.wasm = env.wasm || {}
-  env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/'
-  env.wasm.numThreads = Math.max(1, Math.min(4, (navigator as any).hardwareConcurrency || 2))
-  env.wasm.proxy = true
+  env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
+  env.wasm.numThreads = 1
+  env.wasm.proxy = false
+  env.wasm.simd = false
 
   update?.('downloading', 0)
 
@@ -33,16 +34,6 @@ export async function ensureModelLoaded(update?: Update) {
         return s
       }
     } catch (e) { console.warn('webgpu init failed', e) }
-    // WASM SIMD
-    try {
-      ;(ort as any).env.wasm.simd = true
-      update?.('loading', undefined)
-      const s = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] })
-      session = s
-      backend = 'wasm-simd'
-      update?.('ready', 1)
-      return s
-    } catch (e) { console.warn('wasm simd init failed', e) }
     // Plain WASM
     try {
       ;(ort as any).env.wasm.simd = false
@@ -62,35 +53,23 @@ export async function ensureModelLoaded(update?: Update) {
 }
 
 async function getModelBytes(update?: Update): Promise<Uint8Array> {
-  // Try CacheStorage first
-  try {
-    const cache = await (caches as any).open('dadoooo-models')
-    const cached = await cache.match('model:u2netp')
-    if (cached) {
-      const buf = new Uint8Array(await cached.arrayBuffer())
-      update?.('ready', 1)
-      return buf
-    }
-  } catch {}
+  // Do not use local storage APIs (localStorage / indexedDB / CacheStorage)
+  // Always fetch the model from remote to avoid sandbox storage restrictions
 
   const candidates = [
-    '/models/u2netp.onnx',
-    '/models/u2net.onnx',
-    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx',
-    'https://huggingface.co/danielgatis/rembg/resolve/main/u2netp.onnx',
-    'https://huggingface.co/bunnio/rembg-models/resolve/main/u2netp.onnx'
+    // 优先使用轻量模型（约 4.6MB），显著缩短首次下载
+    'https://huggingface.co/jilijeanlouis/test-u2net/resolve/main/u2netp.onnx',
+    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx'
   ]
 
   for (const url of candidates) {
     try {
       const buf = await downloadAsUint8Array(url, update)
-      try {
-        const cache = await (caches as any).open('dadoooo-models')
-        await cache.put('model:u2netp', new Response(buf))
-      } catch {}
+      // Skip writing to CacheStorage to comply with restricted environments
       return buf
     } catch (e) { console.warn('model download failed', url, e) }
   }
+  update?.('error', undefined, '模型下载失败或不可用，请使用快速模式')
   throw new Error('model_not_found')
 }
 
