@@ -14,6 +14,43 @@ let session: ort.InferenceSession | null = null
 let creating: Promise<ort.InferenceSession> | null = null
 let modelType: 'isnet' = 'isnet'
 
+async function idbOpen(): Promise<IDBDatabase> {
+  return await new Promise((resolve, reject) => {
+    const req = indexedDB.open('isnet-model-cache', 1)
+    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains('models')) db.createObjectStore('models') }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function idbGet(key: string): Promise<Uint8Array | null> {
+  try {
+    const db = await idbOpen()
+    return await new Promise((resolve) => {
+      const tx = db.transaction('models', 'readonly')
+      const store = tx.objectStore('models')
+      const req = store.get(key)
+      req.onsuccess = () => {
+        const v = req.result as ArrayBuffer | undefined
+        resolve(v ? new Uint8Array(v) : null)
+      }
+      req.onerror = () => resolve(null)
+    })
+  } catch { return null }
+}
+
+async function idbPut(key: string, bytes: Uint8Array): Promise<void> {
+  try {
+    const db = await idbOpen()
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('models', 'readwrite')
+      const store = tx.objectStore('models')
+      const req = store.put(bytes.buffer, key)
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+    })
+  } catch {}
+}
 function postProgress(stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: number, errorMessage?: string) {
   ;(self as any).postMessage({ type: 'progress', stage, progress, errorMessage } as Res)
 }
@@ -56,7 +93,10 @@ async function getModelBytes(update?: Update): Promise<Uint8Array> {
   ]
   for (const url of candidates) {
     try {
+      const cached = await idbGet(url)
+      if (cached && cached.byteLength > 0) return cached
       const buf = await downloadAsUint8Array(url, update)
+      await idbPut(url, buf)
       return buf
     } catch (e) {}
   }
@@ -102,7 +142,7 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const h0 = height
   const target = 1024
   const chw = new Float32Array(1 * 3 * target * target)
-  const tmp = resizeRgbaToSquare(rgba, w0, h0, target)
+  const tmp = resizeRgbaToFixed(rgba, w0, h0, target, target)
   const mean = [0.485, 0.456, 0.406]
   const std = [0.229, 0.224, 0.225]
   for (let y = 0; y < target; y++) {
@@ -128,30 +168,18 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     if (arr && arr.length === target * target) { outName = n; break }
   }
   const out = (results as any)[outName].data as Float32Array | Uint8Array
-  const mSmall = new Uint8ClampedArray(target * target)
-  if (modelType === 'isnet') {
-    for (let i = 0; i < mSmall.length; i++) {
-      const v = Number((out as any)[i])
-      const s = 1 / (1 + Math.exp(-v))
-      mSmall[i] = Math.max(0, Math.min(255, Math.round(s * 255)))
-    }
-  } else {
-    for (let i = 0; i < mSmall.length; i++) {
-      const v = (out as any)[i]
-      const a = Math.max(0, Math.min(255, Math.round((typeof v === 'number' ? v : Number(v)) * 255)))
-      mSmall[i] = a
-    }
+  const mSmallF = new Float32Array(target * target)
+  for (let i = 0; i < mSmallF.length; i++) {
+    const v = Number((out as any)[i])
+    mSmallF[i] = 1 / (1 + Math.exp(-v))
   }
-  const alphaBig = scaleAlphaNearest(mSmall, target, target, w0, h0)
-  const otsuT = computeOtsuThreshold(alphaBig)
-  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 1, threshold: otsuT })
-  refined = largestComponent(refined, w0, h0)
+  const alphaBigF = scaleAlphaBilinear(mSmallF, target, target, w0, h0)
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
     outRgba[p4] = rgba[pSrc]
     outRgba[p4 + 1] = rgba[pSrc + 1]
     outRgba[p4 + 2] = rgba[pSrc + 2]
-    outRgba[p4 + 3] = refined[i]
+    outRgba[p4 + 3] = Math.max(0, Math.min(255, Math.round(alphaBigF[i] * 255)))
   }
   return outRgba
 }
@@ -171,35 +199,53 @@ function runFastPreview(width: number, height: number, rgba: Uint8ClampedArray):
   return out
 }
 
-function resizeRgbaToSquare(src: Uint8ClampedArray, w0: number, h0: number, target: number) {
-  const out = new Uint8ClampedArray(target * target * 4)
-  const scale = Math.min(target / w0, target / h0)
-  const nw = Math.max(1, Math.round(w0 * scale))
-  const nh = Math.max(1, Math.round(h0 * scale))
-  const ox = Math.floor((target - nw) / 2)
-  const oy = Math.floor((target - nh) / 2)
-  for (let y = 0; y < nh; y++) {
-    for (let x = 0; x < nw; x++) {
-      const sx = Math.min(w0 - 1, Math.round(x / scale))
-      const sy = Math.min(h0 - 1, Math.round(y / scale))
-      const si = (sy * w0 + sx) * 4
-      const di = ((oy + y) * target + (ox + x)) * 4
-      out[di] = src[si]
-      out[di + 1] = src[si + 1]
-      out[di + 2] = src[si + 2]
-      out[di + 3] = 255
+function resizeRgbaToFixed(src: Uint8ClampedArray, w0: number, h0: number, tw: number, th: number) {
+  const out = new Uint8ClampedArray(tw * th * 4)
+  for (let y = 0; y < th; y++) {
+    const syf = (y + 0.5) * h0 / th - 0.5
+    const sy0 = Math.max(0, Math.floor(syf))
+    const sy1 = Math.min(h0 - 1, sy0 + 1)
+    const wy = syf - sy0
+    for (let x = 0; x < tw; x++) {
+      const sxf = (x + 0.5) * w0 / tw - 0.5
+      const sx0 = Math.max(0, Math.floor(sxf))
+      const sx1 = Math.min(w0 - 1, sx0 + 1)
+      const wx = sxf - sx0
+      const i00 = (sy0 * w0 + sx0) * 4
+      const i01 = (sy0 * w0 + sx1) * 4
+      const i10 = (sy1 * w0 + sx0) * 4
+      const i11 = (sy1 * w0 + sx1) * 4
+      const di = (y * tw + x) * 4
+      for (let c = 0; c < 4; c++) {
+        const v00 = src[i00 + c], v01 = src[i01 + c], v10 = src[i10 + c], v11 = src[i11 + c]
+        const v0 = v00 * (1 - wx) + v01 * wx
+        const v1 = v10 * (1 - wx) + v11 * wx
+        out[di + c] = Math.round(v0 * (1 - wy) + v1 * wy)
+      }
     }
   }
   return out
 }
 
-function scaleAlphaNearest(src: Uint8ClampedArray, sw: number, sh: number, dw: number, dh: number) {
-  const out = new Uint8ClampedArray(dw * dh)
+function scaleAlphaBilinear(src: Float32Array, sw: number, sh: number, dw: number, dh: number) {
+  const out = new Float32Array(dw * dh)
   for (let y = 0; y < dh; y++) {
+    const syf = (y + 0.5) * sh / dh - 0.5
+    const sy0 = Math.max(0, Math.floor(syf))
+    const sy1 = Math.min(sh - 1, sy0 + 1)
+    const wy = syf - sy0
     for (let x = 0; x < dw; x++) {
-      const sx = Math.floor(x * sw / dw)
-      const sy = Math.floor(y * sh / dh)
-      out[y * dw + x] = src[sy * sw + sx]
+      const sxf = (x + 0.5) * sw / dw - 0.5
+      const sx0 = Math.max(0, Math.floor(sxf))
+      const sx1 = Math.min(sw - 1, sx0 + 1)
+      const wx = sxf - sx0
+      const i00 = sy0 * sw + sx0
+      const i01 = sy0 * sw + sx1
+      const i10 = sy1 * sw + sx0
+      const i11 = sy1 * sw + sx1
+      const v0 = src[i00] * (1 - wx) + src[i01] * wx
+      const v1 = src[i10] * (1 - wx) + src[i11] * wx
+      out[y * dw + x] = v0 * (1 - wy) + v1 * wy
     }
   }
   return out
