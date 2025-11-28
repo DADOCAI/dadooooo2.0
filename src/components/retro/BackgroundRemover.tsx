@@ -3,7 +3,7 @@ import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
 import LocalModelInitDialog from '../common/LocalModelInitDialog';
-import { ensureModelLoaded, runMatting, getBackend, runFastPreview } from '../../lib/localMattingModel';
+import { ensureWorkerReady, runMattingInWorker, runFastPreviewInWorker } from '../../lib/mattingWorkerClient';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -65,7 +65,7 @@ export function BackgroundRemover() {
     setErrorMsg(null);
     try {
       const bmp = await createImageBitmap(selectedFile);
-      const maxSide = 2048;
+      const maxSide = 1536;
       const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
       const w = Math.max(1, Math.round(bmp.width * scale));
       const h = Math.max(1, Math.round(bmp.height * scale));
@@ -76,14 +76,12 @@ export function BackgroundRemover() {
       const img = ctx.getImageData(0, 0, w, h);
       let preciseReady = true;
       try {
-        // if model not yet ready, start loading in background and provide fast preview first
         setModelLoading(true);
-        const outId = await runMatting(img);
+        await ensureWorkerReady((s, p, e) => { setDlgStage(s); setDlgProgress(p); setDlgError(e); setDlgVisible(s !== 'ready' && s !== 'error'); });
+        setDlgVisible(false);
+        const outId = await runMattingInWorker(img);
         setModelLoading(false);
-        const be = getBackend();
-        if (be === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
-        else if (be === 'wasm-simd') setStatusMsg('正在使用极速模式');
-        else if (be === 'wasm') setStatusMsg('兼容模式，速度略慢');
+        setStatusMsg('已使用本地模型进行精确抠图');
         const blob: Blob = await new Promise((resolve, reject) => {
           const c2 = document.createElement('canvas');
           c2.width = outId.width; c2.height = outId.height;
@@ -98,7 +96,7 @@ export function BackgroundRemover() {
       }
       if (!preciseReady) {
         try {
-          const outFast = await runFastPreview(img);
+          const outFast = await runFastPreviewInWorker(img);
           const blob: Blob = await new Promise((resolve, reject) => {
             const c3 = document.createElement('canvas');
             c3.width = outFast.width; c3.height = outFast.height;
@@ -110,8 +108,8 @@ export function BackgroundRemover() {
           setStatusMsg('已先生成快速预览，模型正在后台加载后将自动升级');
           // try to load and upgrade when ready
           try {
-            await ensureModelLoaded((s, p, e) => { setDlgStage(s); setDlgProgress(p); setDlgError(e); });
-            const outId2 = await runMatting(img);
+            await ensureWorkerReady((s, p, e) => { setDlgStage(s); setDlgProgress(p); setDlgError(e); });
+            const outId2 = await runMattingInWorker(img);
             const blob2: Blob = await new Promise((resolve, reject) => {
               const c4 = document.createElement('canvas');
               c4.width = outId2.width; c4.height = outId2.height;
@@ -120,10 +118,7 @@ export function BackgroundRemover() {
             });
             const url4 = URL.createObjectURL(blob2);
             setProcessedImage(url4);
-            const be2 = getBackend();
-            if (be2 === 'webgpu') setStatusMsg('正在使用 GPU 加速抠图（速度最快）');
-            else if (be2 === 'wasm-simd') setStatusMsg('正在使用极速模式');
-            else if (be2 === 'wasm') setStatusMsg('兼容模式，速度略慢');
+            setStatusMsg('已升级为精确抠图结果');
           } catch {}
         } catch {
           setErrorMsg('设备不支持本地精确抠图，请使用快速模式');
@@ -132,7 +127,17 @@ export function BackgroundRemover() {
     } catch (err) {
       setDlgVisible(false);
       try {
-        const outFast = await runFastPreview(img);
+        const bmp = await createImageBitmap(selectedFile);
+        const maxSide = 1024;
+        const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+        const w = Math.max(1, Math.round(bmp.width * scale));
+        const h = Math.max(1, Math.round(bmp.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(bmp, 0, 0, w, h);
+        const img2 = ctx.getImageData(0, 0, w, h);
+        const outFast = await runFastPreviewInWorker(img2);
         const blob: Blob = await new Promise((resolve, reject) => {
           const c3 = document.createElement('canvas');
           c3.width = outFast.width; c3.height = outFast.height;
