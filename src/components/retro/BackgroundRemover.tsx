@@ -3,7 +3,7 @@ import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
 import LocalModelInitDialog from '../common/LocalModelInitDialog';
-import { ensureWorkerReady, runMattingInWorker, runFastPreviewInWorker } from '../../lib/mattingWorkerClient';
+import { ensureWorkerReady, runMattingInWorker, runFastPreviewInWorker, getLastReadyModel } from '../../lib/mattingWorkerClient';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -81,7 +81,8 @@ export function BackgroundRemover() {
         setDlgVisible(false);
         const outId = await runMattingInWorker(img);
         setModelLoading(false);
-        setStatusMsg('已使用本地模型进行精确抠图');
+        const m = getLastReadyModel();
+        setStatusMsg(m ? `已使用 ${m.toUpperCase()} 模型进行精确抠图` : '已使用本地模型进行精确抠图');
         const blob: Blob = await new Promise((resolve, reject) => {
           const c2 = document.createElement('canvas');
           c2.width = outId.width; c2.height = outId.height;

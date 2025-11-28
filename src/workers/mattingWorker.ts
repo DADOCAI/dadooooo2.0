@@ -38,7 +38,7 @@ async function ensureModelLoaded(update?: Update) {
       update?.('loading', undefined)
       const s = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] })
       session = s
-      update?.('ready', 1)
+      update?.('ready', 1, modelType)
       return s
     } catch (e: any) {
       const msg = (e && e.message) ? String(e.message) : 'unsupported'
@@ -75,7 +75,7 @@ async function getModelBytes(update?: Update): Promise<Uint8Array> {
 
 async function downloadAsUint8Array(url: string, update?: Update): Promise<Uint8Array> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 25000)
+  const timeout = setTimeout(() => controller.abort(), 120000)
   let resp: Response
   try {
     resp = await fetch(url, { mode: 'cors', signal: controller.signal })

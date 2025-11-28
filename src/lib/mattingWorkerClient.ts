@@ -1,5 +1,6 @@
 let worker: Worker | null = null
 let jobCounter = 1
+let lastModelName: string | undefined
 type Listener = (stage: 'downloading' | 'loading' | 'ready' | 'error', progress?: number, errorMessage?: string) => void
 
 function getWorker() {
@@ -16,7 +17,7 @@ export async function ensureWorkerReady(onUpdate?: Listener) {
       const msg = ev.data
       if (msg && msg.type === 'progress') {
         onUpdate?.(msg.stage, msg.progress, msg.errorMessage)
-        if (msg.stage === 'ready') { w.removeEventListener('message', handleMessage); resolve() }
+        if (msg.stage === 'ready') { lastModelName = msg.errorMessage; w.removeEventListener('message', handleMessage); resolve() }
         if (msg.stage === 'error') { w.removeEventListener('message', handleMessage); resolve() }
       }
     }
@@ -71,3 +72,4 @@ export async function runFastPreviewInWorker(imageData: ImageData): Promise<Imag
   })
 }
 
+export function getLastReadyModel() { return lastModelName }
