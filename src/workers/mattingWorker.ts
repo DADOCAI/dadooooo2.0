@@ -176,12 +176,36 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     mSmallF[i] = 1 / (1 + Math.exp(-v))
   }
   const alphaBigF = scaleAlphaBilinear(mSmallF, target, target, w0, h0)
+
+  // adaptively binarize and refine to avoid over- or under-matting
+  const alpha8 = new Uint8ClampedArray(w0 * h0)
+  for (let i = 0; i < w0 * h0; i++) alpha8[i] = Math.round(Math.max(0, Math.min(1, alphaBigF[i])) * 255)
+  let t = computeOtsuThreshold(alpha8)
+  let bin = new Uint8ClampedArray(w0 * h0)
+  for (let i = 0; i < w0 * h0; i++) bin[i] = alpha8[i] >= t ? 255 : 0
+  let fgRatio = 0
+  for (let i = 0; i < bin.length; i++) if (bin[i] === 255) fgRatio++
+  fgRatio = fgRatio / bin.length
+  if (fgRatio < 0.02) {
+    t = Math.max(32, t - 16)
+    for (let i = 0; i < w0 * h0; i++) bin[i] = alpha8[i] >= t ? 255 : 0
+  } else if (fgRatio > 0.98) {
+    t = Math.min(224, t + 16)
+    for (let i = 0; i < w0 * h0; i++) bin[i] = alpha8[i] >= t ? 255 : 0
+  }
+
+  const largest = largestComponent(bin, w0, h0)
+  const closed = close(largest, w0, h0, 1)
+  const refined = new Uint8ClampedArray(closed.length)
+  refined.set(closed)
+  blurAlpha(refined, w0, h0, 2)
+
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
     outRgba[p4] = rgba[pSrc]
     outRgba[p4 + 1] = rgba[pSrc + 1]
     outRgba[p4 + 2] = rgba[pSrc + 2]
-    outRgba[p4 + 3] = alphaBigF[i] >= 0.5 ? 255 : 0
+    outRgba[p4 + 3] = refined[i]
   }
   return outRgba
 }
