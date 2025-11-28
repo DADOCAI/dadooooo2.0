@@ -73,3 +73,7 @@ export async function runFastPreviewInWorker(imageData: ImageData): Promise<Imag
 }
 
 export function getLastReadyModel() { return lastModelName }
+
+export function resetMattingWorker() {
+  if (worker) { worker.terminate(); worker = null; lastModelName = undefined }
+}

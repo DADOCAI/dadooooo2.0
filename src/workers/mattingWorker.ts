@@ -129,15 +129,22 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   }
   const out = (results as any)[outName].data as Float32Array | Uint8Array
   const mSmall = new Uint8ClampedArray(target * target)
-  for (let i = 0; i < mSmall.length; i++) {
-    const v = (out as any)[i]
-    // RMBG 输出通常在 [0,1]，仍按 0-255 映射
-    const a = Math.max(0, Math.min(255, Math.round((typeof v === 'number' ? v : Number(v)) * 255)))
-    mSmall[i] = a
+  if (modelType === 'isnet') {
+    for (let i = 0; i < mSmall.length; i++) {
+      const v = Number((out as any)[i])
+      const s = 1 / (1 + Math.exp(-v))
+      mSmall[i] = Math.max(0, Math.min(255, Math.round(s * 255)))
+    }
+  } else {
+    for (let i = 0; i < mSmall.length; i++) {
+      const v = (out as any)[i]
+      const a = Math.max(0, Math.min(255, Math.round((typeof v === 'number' ? v : Number(v)) * 255)))
+      mSmall[i] = a
+    }
   }
   const alphaBig = scaleAlphaNearest(mSmall, target, target, w0, h0)
   // 更强的后处理：开运算 + 闭运算 + 羽化，减少小残留与孔洞
-  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 3 })
+  let refined = refineAlpha(alphaBig, w0, h0, { morphRadius: 1, featherRadius: 3, threshold: 96 })
   refined = close(refined, w0, h0, 1)
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
@@ -218,9 +225,10 @@ function blurAlpha(alpha: Uint8ClampedArray, w: number, h: number, r: number) {
   alpha.set(out)
 }
 
-function refineAlpha(alpha: Uint8ClampedArray, w: number, h: number, opts: { morphRadius: number, featherRadius: number }) {
+function refineAlpha(alpha: Uint8ClampedArray, w: number, h: number, opts: { morphRadius: number, featherRadius: number, threshold?: number }) {
   const bin = new Uint8ClampedArray(alpha.length)
-  for (let i = 0; i < alpha.length; i++) bin[i] = alpha[i] >= 128 ? 255 : 0
+  const t = typeof opts.threshold === 'number' ? Math.max(0, Math.min(255, Math.round(opts.threshold))) : 128
+  for (let i = 0; i < alpha.length; i++) bin[i] = alpha[i] >= t ? 255 : 0
   const opened = erode(dilate(bin, w, h, opts.morphRadius), w, h, opts.morphRadius)
   const refined = new Uint8ClampedArray(opened.length)
   refined.set(opened)

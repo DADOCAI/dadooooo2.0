@@ -3,7 +3,7 @@ import { RetroWindow } from './RetroWindow';
 import { RetroButton } from './RetroButton';
 import { Upload, Download, Image as ImageIcon, Sparkles, Zap } from 'lucide-react@0.487.0';
 import LocalModelInitDialog from '../common/LocalModelInitDialog';
-import { ensureWorkerReady, runMattingInWorker, runFastPreviewInWorker, getLastReadyModel } from '../../lib/mattingWorkerClient';
+import { ensureWorkerReady, runMattingInWorker, runFastPreviewInWorker, getLastReadyModel, resetMattingWorker } from '../../lib/mattingWorkerClient';
 
 type ProcessMode = 'precise' | 'fast';
 
@@ -49,11 +49,14 @@ export function BackgroundRemover() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      resetMattingWorker();
       setSelectedFile(file);
       const reader = new FileReader();
       reader.onload = (evt) => {
         setSelectedImage(evt.target?.result as string);
         setProcessedImage(null);
+        setStatusMsg(null);
+        setErrorMsg(null);
       };
       reader.readAsDataURL(file);
     }
