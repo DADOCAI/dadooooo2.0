@@ -68,22 +68,40 @@ async function ensureModelLoaded(update?: Update) {
   env.wasm.proxy = false
   env.wasm.simd = false
 
+  // 环境检测：优先 WebGPU，不可用则回退 WASM 单线程
+  const providersPlan: string[][] = []
+  try {
+    if (env.webgpu && typeof env.webgpu.init === 'function') {
+      await env.webgpu.init()
+      providersPlan.push(['webgpu', 'wasm'])
+    }
+  } catch {}
+  if (providersPlan.length === 0) providersPlan.push(['wasm'])
+
   update?.('downloading', 0)
 
   const modelBytes = await getModelBytesCached(update)
 
   creating = (async () => {
-    try {
-      update?.('loading', undefined)
-      const s = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] })
-      session = s
-      update?.('ready', 1, modelType)
-      return s
-    } catch (e: any) {
-      const msg = (e && e.message) ? String(e.message) : 'unsupported'
-      update?.('error', undefined, msg)
-      throw e
+    let lastErr: any = null
+    for (const prov of providersPlan) {
+      try {
+        update?.('loading', undefined)
+        const s = await ort.InferenceSession.create(modelBytes, { executionProviders: prov })
+        session = s
+        console.log('execution provider =', prov[0])
+        // 快速自检：对 64×64 测试图做一次推理
+        await quickSelfTest(session)
+        update?.('ready', 1, modelType)
+        return s
+      } catch (e: any) {
+        lastErr = e
+        continue
+      }
     }
+    const msg = (lastErr && lastErr.message) ? String(lastErr.message) : 'unsupported'
+    update?.('error', undefined, msg)
+    throw lastErr || new Error('unsupported')
   })()
   return creating
 }
@@ -151,6 +169,7 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const mean = [0.485, 0.456, 0.406]
   const std = [0.229, 0.224, 0.225]
 
+  // BRIA 预处理：等比缩放到不超过1024，并居中padding到1024×1024；转为RGB、float32并按mean/std归一化
   const boxed = resizeAndPadToSquare(rgba, w0, h0, target)
   const chw = new Float32Array(1 * 3 * target * target)
   for (let y = 0; y < target; y++) {
@@ -183,10 +202,13 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     maskSquare[i] = Math.max(0, Math.min(1, s))
   }
 
+  // 从方形掩码裁掉padding区域
   const cropped = cropFloat(maskSquare, target, target, boxed.padLeft, boxed.padTop, boxed.w1, boxed.h1)
+  // 回弹到原图尺寸
   const alphaBigF = scaleAlphaBilinear(cropped, boxed.w1, boxed.h1, w0, h0)
 
   // normalize mask to 0..1 via min-max, then optional thresholding to push foreground/background
+  // mask 后处理：min-max normalize + 轻度gamma与阈值强化，抠干净白墙背景
   let minV = 1, maxV = 0
   for (let i = 0; i < alphaBigF.length; i++) {
     const v = alphaBigF[i]
@@ -196,12 +218,13 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const denom = Math.max(1e-6, maxV - minV)
   for (let i = 0; i < alphaBigF.length; i++) {
     let v = (alphaBigF[i] - minV) / denom
-    v = Math.pow(Math.max(0, Math.min(1, v)), 1.5)
-    if (v < 0.1) v = 0
-    else if (v > 0.9) v = 1
+    v = Math.pow(Math.max(0, Math.min(1, v)), 2.0)
+    if (v < 0.05) v = 0
+    else if (v > 0.95) v = 1
     alphaBigF[i] = v
   }
 
+  // 合成：RGB保留原图像素；alpha = mask * 255（uint8）
   const alpha8 = new Uint8ClampedArray(w0 * h0)
   for (let i = 0; i < alpha8.length; i++) alpha8[i] = Math.round(Math.max(0, Math.min(1, alphaBigF[i])) * 255)
   blurAlpha(alpha8, w0, h0, 2)
@@ -315,6 +338,32 @@ function scaleAlphaBilinear(src: Float32Array, sw: number, sh: number, dw: numbe
     }
   }
   return out
+}
+
+async function quickSelfTest(s: ort.InferenceSession) {
+  const w = 64, h = 64, target = 1024
+  const img = new Uint8ClampedArray(w * h * 4)
+  for (let i = 0; i < img.length; i += 4) { img[i] = 128; img[i + 1] = 128; img[i + 2] = 128; img[i + 3] = 255 }
+  const mean = [0.485, 0.456, 0.406]
+  const std = [0.229, 0.224, 0.225]
+  const boxed = resizeAndPadToSquare(img, w, h, target)
+  const chw = new Float32Array(1 * 3 * target * target)
+  for (let y = 0; y < target; y++) {
+    for (let x = 0; x < target; x++) {
+      const idx = y * target + x
+      const i = idx * 4
+      const r = boxed.rgba[i] / 255
+      const g = boxed.rgba[i + 1] / 255
+      const b = boxed.rgba[i + 2] / 255
+      chw[0 * target * target + idx] = (r - mean[0]) / std[0]
+      chw[1 * target * target + idx] = (g - mean[1]) / std[1]
+      chw[2 * target * target + idx] = (b - mean[2]) / std[2]
+    }
+  }
+  const inputName = s.inputNames ? s.inputNames[0] : 'input'
+  const feeds: any = {}
+  feeds[inputName] = new ort.Tensor('float32', chw, [1, 3, target, target])
+  await s.run(feeds)
 }
 
 function blurAlpha(alpha: Uint8ClampedArray, w: number, h: number, r: number) {
