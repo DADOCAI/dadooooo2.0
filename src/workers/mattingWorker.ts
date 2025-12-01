@@ -190,8 +190,9 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const denom = Math.max(1e-6, maxV - minV)
   for (let i = 0; i < alphaBigF.length; i++) {
     let v = (alphaBigF[i] - minV) / denom
-    if (v > 0.9) v = 1
-    else if (v < 0.1) v = 0
+    v = Math.pow(Math.max(0, Math.min(1, v)), 1.5)
+    if (v < 0.1) v = 0
+    else if (v > 0.9) v = 1
     alphaBigF[i] = v
   }
 
