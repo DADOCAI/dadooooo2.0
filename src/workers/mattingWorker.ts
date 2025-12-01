@@ -90,13 +90,19 @@ async function ensureModelLoaded(update?: Update) {
 
 async function getModelBytes(update?: Update): Promise<Uint8Array> {
   const candidates = [
-    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx'
+    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/model.onnx'
   ]
   for (const url of candidates) {
     try {
       const cached = await idbGet(url)
-      if (cached && cached.byteLength > 0) return cached
+      if (cached && cached.byteLength > 0) {
+        console.log('segment model url =', url)
+        console.log('segment model size =', cached.byteLength, 'bytes')
+        return cached
+      }
+      console.log('segment model url =', url)
       const buf = await downloadAsUint8Array(url, update)
+      console.log('segment model size =', buf.byteLength, 'bytes')
       await idbPut(url, buf)
       return buf
     } catch (e) {}
@@ -472,13 +478,19 @@ function largestComponent(bin: Uint8ClampedArray, w: number, h: number) {
 
 async function getModelBytesCached(update?: Update): Promise<Uint8Array> {
   const candidates = [
-    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx'
+    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/model.onnx'
   ]
   for (const url of candidates) {
     try {
       const cached = await idbGet(url)
-      if (cached && cached.byteLength > 0) return cached
+      if (cached && cached.byteLength > 0) {
+        console.log('segment model url =', url)
+        console.log('segment model size =', cached.byteLength, 'bytes')
+        return cached
+      }
+      console.log('segment model url =', url)
       const buf = await downloadAsUint8Array(url, update)
+      console.log('segment model size =', buf.byteLength, 'bytes')
       await idbPut(url, buf)
       return buf
     } catch (e) {}
