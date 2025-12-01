@@ -180,8 +180,23 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const cropped = cropFloat(maskSquare, target, target, boxed.padLeft, boxed.padTop, boxed.w1, boxed.h1)
   const alphaBigF = scaleAlphaBilinear(cropped, boxed.w1, boxed.h1, w0, h0)
 
+  // normalize mask to 0..1 via min-max, then optional thresholding to push foreground/background
+  let minV = 1, maxV = 0
+  for (let i = 0; i < alphaBigF.length; i++) {
+    const v = alphaBigF[i]
+    if (v < minV) minV = v
+    if (v > maxV) maxV = v
+  }
+  const denom = Math.max(1e-6, maxV - minV)
+  for (let i = 0; i < alphaBigF.length; i++) {
+    let v = (alphaBigF[i] - minV) / denom
+    if (v > 0.9) v = 1
+    else if (v < 0.1) v = 0
+    alphaBigF[i] = v
+  }
+
   const alpha8 = new Uint8ClampedArray(w0 * h0)
-  for (let i = 0; i < alpha8.length; i++) alpha8[i] = Math.round(alphaBigF[i] * 255)
+  for (let i = 0; i < alpha8.length; i++) alpha8[i] = Math.round(Math.max(0, Math.min(1, alphaBigF[i])) * 255)
   blurAlpha(alpha8, w0, h0, 2)
 
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
