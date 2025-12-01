@@ -12,7 +12,7 @@ type Res =
 
 let session: ort.InferenceSession | null = null
 let creating: Promise<ort.InferenceSession> | null = null
-let modelType: 'isnet' = 'isnet'
+let modelType: 'bria' = 'bria'
 
  
 
@@ -90,8 +90,7 @@ async function ensureModelLoaded(update?: Update) {
 
 async function getModelBytes(update?: Update): Promise<Uint8Array> {
   const candidates = [
-    'https://huggingface.co/jellybox/isnet-general-use/resolve/main/isnet-general-use.onnx',
-    'https://huggingface.co/x-Liola-x/isnet-general-use-onnx/resolve/main/isnet-general-use.onnx'
+    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx'
   ]
   for (const url of candidates) {
     try {
@@ -143,17 +142,18 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
   const w0 = width
   const h0 = height
   const target = 1024
-  const chw = new Float32Array(1 * 3 * target * target)
-  const tmp = resizeRgbaToFixed(rgba, w0, h0, target, target)
   const mean = [0.485, 0.456, 0.406]
   const std = [0.229, 0.224, 0.225]
+
+  const boxed = resizeAndPadToSquare(rgba, w0, h0, target)
+  const chw = new Float32Array(1 * 3 * target * target)
   for (let y = 0; y < target; y++) {
     for (let x = 0; x < target; x++) {
       const idx = y * target + x
       const i = idx * 4
-      const r = tmp[i] / 255
-      const g = tmp[i + 1] / 255
-      const b = tmp[i + 2] / 255
+      const r = boxed.rgba[i] / 255
+      const g = boxed.rgba[i + 1] / 255
+      const b = boxed.rgba[i + 2] / 255
       chw[0 * target * target + idx] = (r - mean[0]) / std[0]
       chw[1 * target * target + idx] = (g - mean[1]) / std[1]
       chw[2 * target * target + idx] = (b - mean[2]) / std[2]
@@ -170,42 +170,26 @@ async function runMatting(width: number, height: number, rgba: Uint8ClampedArray
     if (arr && arr.length === target * target) { outName = n; break }
   }
   const out = (results as any)[outName].data as Float32Array | Uint8Array
-  const mSmallF = new Float32Array(target * target)
-  for (let i = 0; i < mSmallF.length; i++) {
+  const maskSquare = new Float32Array(target * target)
+  for (let i = 0; i < maskSquare.length; i++) {
     const v = Number((out as any)[i])
-    mSmallF[i] = 1 / (1 + Math.exp(-v))
+    const s = 1 / (1 + Math.exp(-v))
+    maskSquare[i] = Math.max(0, Math.min(1, s))
   }
-  const alphaBigF = scaleAlphaBilinear(mSmallF, target, target, w0, h0)
 
-  // adaptively binarize and refine to avoid over- or under-matting
+  const cropped = cropFloat(maskSquare, target, target, boxed.padLeft, boxed.padTop, boxed.w1, boxed.h1)
+  const alphaBigF = scaleAlphaBilinear(cropped, boxed.w1, boxed.h1, w0, h0)
+
   const alpha8 = new Uint8ClampedArray(w0 * h0)
-  for (let i = 0; i < w0 * h0; i++) alpha8[i] = Math.round(Math.max(0, Math.min(1, alphaBigF[i])) * 255)
-  let t = computeOtsuThreshold(alpha8)
-  let bin = new Uint8ClampedArray(w0 * h0)
-  for (let i = 0; i < w0 * h0; i++) bin[i] = alpha8[i] >= t ? 255 : 0
-  let fgRatio = 0
-  for (let i = 0; i < bin.length; i++) if (bin[i] === 255) fgRatio++
-  fgRatio = fgRatio / bin.length
-  if (fgRatio < 0.02) {
-    t = Math.max(32, t - 16)
-    for (let i = 0; i < w0 * h0; i++) bin[i] = alpha8[i] >= t ? 255 : 0
-  } else if (fgRatio > 0.98) {
-    t = Math.min(224, t + 16)
-    for (let i = 0; i < w0 * h0; i++) bin[i] = alpha8[i] >= t ? 255 : 0
-  }
-
-  const largest = largestComponent(bin, w0, h0)
-  const closed = close(largest, w0, h0, 1)
-  const refined = new Uint8ClampedArray(closed.length)
-  refined.set(closed)
-  blurAlpha(refined, w0, h0, 2)
+  for (let i = 0; i < alpha8.length; i++) alpha8[i] = Math.round(alphaBigF[i] * 255)
+  blurAlpha(alpha8, w0, h0, 2)
 
   const outRgba = new Uint8ClampedArray(w0 * h0 * 4)
   for (let i = 0, p4 = 0, pSrc = 0; i < w0 * h0; i++, p4 += 4, pSrc += 4) {
     outRgba[p4] = rgba[pSrc]
     outRgba[p4 + 1] = rgba[pSrc + 1]
     outRgba[p4 + 2] = rgba[pSrc + 2]
-    outRgba[p4 + 3] = refined[i]
+    outRgba[p4 + 3] = alpha8[i]
   }
   return outRgba
 }
@@ -248,6 +232,40 @@ function resizeRgbaToFixed(src: Uint8ClampedArray, w0: number, h0: number, tw: n
         const v1 = v10 * (1 - wx) + v11 * wx
         out[di + c] = Math.round(v0 * (1 - wy) + v1 * wy)
       }
+    }
+  }
+  return out
+}
+
+function resizeAndPadToSquare(src: Uint8ClampedArray, w0: number, h0: number, target: number) {
+  const scale = Math.min(1, target / Math.max(w0, h0))
+  const w1 = Math.max(1, Math.round(w0 * scale))
+  const h1 = Math.max(1, Math.round(h0 * scale))
+  const padLeft = Math.floor((target - w1) / 2)
+  const padTop = Math.floor((target - h1) / 2)
+  const tmp = resizeRgbaToFixed(src, w0, h0, w1, h1)
+  const out = new Uint8ClampedArray(target * target * 4)
+  for (let i = 0; i < out.length; i++) out[i] = 0
+  for (let y = 0; y < h1; y++) {
+    for (let x = 0; x < w1; x++) {
+      const si = (y * w1 + x) * 4
+      const di = ((padTop + y) * target + (padLeft + x)) * 4
+      out[di] = tmp[si]
+      out[di + 1] = tmp[si + 1]
+      out[di + 2] = tmp[si + 2]
+      out[di + 3] = 255
+    }
+  }
+  return { rgba: out, w1, h1, padLeft, padTop }
+}
+
+function cropFloat(src: Float32Array, sw: number, sh: number, x: number, y: number, w: number, h: number) {
+  const out = new Float32Array(w * h)
+  for (let yy = 0; yy < h; yy++) {
+    const sy = y + yy
+    for (let xx = 0; xx < w; xx++) {
+      const sx = x + xx
+      out[yy * w + xx] = src[sy * sw + sx]
     }
   }
   return out
@@ -438,8 +456,7 @@ function largestComponent(bin: Uint8ClampedArray, w: number, h: number) {
 
 async function getModelBytesCached(update?: Update): Promise<Uint8Array> {
   const candidates = [
-    'https://huggingface.co/jellybox/isnet-general-use/resolve/main/isnet-general-use.onnx',
-    'https://huggingface.co/x-Liola-x/isnet-general-use-onnx/resolve/main/isnet-general-use.onnx'
+    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model.onnx'
   ]
   for (const url of candidates) {
     try {
