@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route } from "react-router-dom";
 import { Header } from "./components/Header";
 import { Toaster } from "./components/ui/sonner";
 import { Home } from "./pages/Home";
@@ -15,25 +15,47 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 export default function App() {
   return (
     <AuthProvider>
-      <Router>
-        <ErrorBoundary>
-          <div className="min-h-screen bg-white">
-            <Header />
-            <Toaster />
-            <LoginDialog />
-            <RegisterDialog />
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/halftone" element={<Halftone />} />
-              <Route path="/cutout" element={<Cutout />} />
-              <Route path="/ascii" element={<Ascii />} />
-              <Route path="*" element={<Home />} />
-            </Routes>
-          </div>
-        </ErrorBoundary>
-      </Router>
+      {(import.meta as any).env && (import.meta as any).env.PROD ? (
+        <HashRouter>
+          <ErrorBoundary>
+            <div className="min-h-screen bg-white">
+              <Header />
+              <Toaster />
+              <LoginDialog />
+              <RegisterDialog />
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/about" element={<About />} />
+                <Route path="/halftone" element={<Halftone />} />
+                <Route path="/cutout" element={<Cutout />} />
+                <Route path="/ascii" element={<Ascii />} />
+                <Route path="*" element={<Home />} />
+              </Routes>
+            </div>
+          </ErrorBoundary>
+        </HashRouter>
+      ) : (
+        <BrowserRouter>
+          <ErrorBoundary>
+            <div className="min-h-screen bg-white">
+              <Header />
+              <Toaster />
+              <LoginDialog />
+              <RegisterDialog />
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/about" element={<About />} />
+                <Route path="/halftone" element={<Halftone />} />
+                <Route path="/cutout" element={<Cutout />} />
+                <Route path="/ascii" element={<Ascii />} />
+                <Route path="*" element={<Home />} />
+              </Routes>
+            </div>
+          </ErrorBoundary>
+        </BrowserRouter>
+      )}
     </AuthProvider>
   );
 }

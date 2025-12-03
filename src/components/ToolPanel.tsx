@@ -1,5 +1,6 @@
 import { ArrowUpRight, Plus } from "lucide-react@0.487.0";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import logoDefault from 'figma:asset/cb7518acee88e4f203be6734e15429ff9c58e4e1.png';
 import logoHover from 'figma:asset/e5c375aeb9d5459e76d1f4b4579b4d2ffbb0055e.png';
 import { FeedbackDialog } from "./FeedbackDialog";
@@ -36,15 +37,22 @@ export function ToolPanel({
 }: ToolPanelProps) {
   const [isHovered, setIsHovered] = useState(false);
   const { isLoggedIn, setShowLoginDialog } = useAuth();
+  const navigate = useNavigate();
 
   const handleClick = (e: React.MouseEvent) => {
-    if (!locked && !isLoggedIn && !publicAccess) {
+    if (locked) return;
+    if (!isLoggedIn && !publicAccess) {
       e.preventDefault();
       setShowLoginDialog(true);
+      return;
+    }
+    if (link) {
+      e.preventDefault();
+      navigate(link);
     }
   };
 
-  const Component = locked ? 'div' : 'a';
+  const Component = 'div';
 
   // 如果是锁定状态，只显示加号
   if (locked) {
@@ -95,7 +103,6 @@ export function ToolPanel({
       }}
     >
       <Component
-        {...(!locked && { href: link })}
         className={`group relative h-[75vh] flex flex-col overflow-hidden transition-all duration-300 ${
           inverted ? "bg-black" : "bg-white"
         }`}
