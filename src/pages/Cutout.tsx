@@ -12,7 +12,7 @@ export default function Cutout() {
     <div style={{ position: 'fixed', inset: 0 }}>
       <iframe
         title="cutout-tool"
-        src="cutout-tool/代码1/filters/examples/index.html"
+        src="/cutout-tool/代码1/filters/examples/index.html"
         style={{ width: '100%', height: '100%', border: 'none' }}
       />
       <div
