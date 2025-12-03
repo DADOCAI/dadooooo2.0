@@ -1,0 +1,425 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #111;
+    overflow: hidden;
+    color: #eee;
+}
+
+#container {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    overflow: hidden;
+}
+
+#stage {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    display: block;
+    z-index: 0;
+}
+
+/* Logo removed */
+#logo {
+    display: none !important;
+}
+
+/* =========================================
+   Lil-GUI Custom Dark Card Theme
+   ========================================= */
+
+/* Base override for lil-gui root */
+.lil-gui.root {
+    position: absolute;
+    top: 20px !important;
+    right: 20px !important;
+    width: 320px !important;
+    max-height: calc(100% - 40px);
+    background-color: #181818 !important;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    border: 1px solid #333;
+    padding: 0 !important; /* We will pad inner elements */
+    overflow: hidden; /* For border radius */
+    --background-color: #181818;
+    --text-color: #ccc;
+    --title-background-color: #181818;
+    --widget-color: #2a2a2a;
+    --hover-color: #333;
+    --focus-color: #444;
+    --number-color: #ea4080;
+    --string-color: #ea4080;
+    --font-size: 13px;
+    --input-font-size: 13px;
+    --padding: 8px;
+    --spacing: 10px;
+    --folder-indent: 0;
+}
+
+/* Hide default top title bar of root */
+.lil-gui.root > .title {
+    display: none !important;
+}
+
+/* Scrollable content area */
+.lil-gui.root > .children {
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    padding: 16px;
+}
+
+/* 
+   Folder Styling (Accordion Items)
+   We want them to look like clean sections or just hide closed ones 
+*/
+.lil-gui details {
+    background: transparent !important;
+    border-bottom: 1px solid #222;
+    margin-bottom: 0;
+    transition: all 0.3s ease;
+}
+
+.lil-gui details:last-child {
+    border-bottom: none;
+}
+
+.lil-gui summary {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 12px 8px;
+    color: #888;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+}
+
+.lil-gui summary:hover {
+    background: #222;
+    color: #fff;
+}
+
+/* Active/Enabled folder title */
+.lil-gui.enabled summary {
+    color: #ea4080 !important;
+}
+
+/* When open, maybe highlight slightly */
+.lil-gui details[open] > summary {
+    display: none; /* Use custom header inside children instead */
+}
+
+/* Controllers */
+.lil-gui .controller {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+}
+
+.lil-gui .controller .name {
+    min-width: 70px;
+    color: #999;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lil-gui .controller .widget {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+}
+
+/* Sliders */
+.lil-gui input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.lil-gui input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #888;
+    border: 3px solid #181818; /* Create that "ring" effect */
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.lil-gui input[type="range"]::-webkit-slider-thumb:hover {
+    background: #fff;
+    transform: scale(1.1);
+}
+
+.lil-gui input[type="range"]:active::-webkit-slider-thumb {
+    background: #ea4080;
+}
+
+/* Number inputs next to sliders */
+.lil-gui input[type="number"] {
+    background: #222 !important;
+    color: #eee !important;
+    border: 1px solid #333 !important;
+    border-radius: 4px;
+    padding: 4px;
+    font-family: monospace;
+    margin-left: 8px;
+}
+
+/* Checkboxes */
+.lil-gui input[type="checkbox"] {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    background: url('./images/dadoo (3).png') center/contain no-repeat;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    position: relative;
+    transition: transform .12s ease, filter .12s ease;
+}
+
+.lil-gui input[type="checkbox"]:checked {
+    background-image: url('./images/dadoo.png');
+}
+
+.lil-gui input[type="checkbox"]:active {
+    transform: scale(0.92);
+    filter: brightness(0.95);
+}
+
+.lil-gui input[type="checkbox"]:checked::after {
+    content: '';
+}
+.lil-gui input[type="checkbox"]::before { content: none !important; }
+
+/* =========================================
+   Custom Injected UI Elements
+   ========================================= */
+
+/* Header for the Open Filter (injected via JS) */
+.filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #333;
+}
+
+.filter-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #fff;
+    margin: 0;
+}
+
+.filter-reset {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 16px;
+    transition: color 0.2s;
+}
+
+.filter-reset:hover {
+    color: #ea4080;
+}
+
+/* Preset tiles removed */
+
+
+/* Upload Bar - Bottom Left */
+#uploadBar {
+    position: relative;
+    z-index: 2;
+    background: #181818;
+    padding: 10px 16px;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    border: 1px solid #333;
+    margin: 0 auto;
+}
+
+#uploadBar input[type="file"] {
+    position: absolute;
+    width: 0.1px;
+    height: 0.1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#uploadBar button {
+    background: #ea4080;
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+    transition: background 0.2s;
+}
+
+#uploadBar button:hover {
+    background: #d6336c;
+}
+
+.upload-hint {
+    color: #999;
+    font-size: 12px;
+}
+
+#uploadBar { cursor: pointer; }
+
+/* Export Bar */
+#exportBar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+#exportBar button {
+    background: #2a2a2a;
+    color: #eee;
+    border: 1px solid #333;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background .15s ease, transform .08s ease;
+}
+#exportBar button:hover { background: #333; }
+#exportBar button:active { transform: scale(0.97); }
+
+.site-footer {
+    position: fixed;
+    left: 16px;
+    bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    z-index: 1000;
+    background: rgba(0,0,0,0.35);
+    padding: 10px 12px;
+    border: 1px solid #333;
+    border-radius: 10px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    max-width: 480px;
+    user-select: none;
+}
+.site-footer .site-logo { width: 110px; height: auto; display: block; }
+.site-footer .site-tagline { color: #bbb; font-size: 12px; line-height: 1.5; }
+@media (max-width: 640px) {
+    .site-footer { left: 8px; right: 8px; bottom: 8px; max-width: none; }
+    .site-footer .site-logo { width: 90px; }
+    .site-footer .site-tagline { font-size: 11px; }
+}
+
+/* =========================================
+   Left Side Panel
+   ========================================= */
+#leftPanel.side-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 320px;
+    background: #181818;
+    border-radius: 16px;
+    border: 1px solid #333;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    padding: 16px;
+}
+
+.panel-section {
+    padding: 12px 0;
+    border-bottom: 1px solid #222;
+}
+.panel-section:last-child { border-bottom: none; }
+
+.panel-title {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+}
+.row label { color: #aaa; font-size: 13px; }
+
+/* Switch toggle */
+.switch { position: relative; display: inline-block; width: 28px; height: 28px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: url('./images/dadoo (3).png') center/contain no-repeat; transition: transform .12s ease, filter .12s ease;
+}
+.switch input:checked + .slider {
+    background-image: url('./images/dadoo.png');
+}
+.switch:active .slider { transform: scale(0.92); filter: brightness(0.95); }
+
+/* Adjust input widths */
+#asciiSize { flex: 1; }
+#asciiColor { width: 36px; height: 36px; border-radius: 50%; border: 3px solid #181818; }
+
+/* Big round color pickers */
+.lil-gui input[type="color"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid #181818;
+    padding: 0;
+    overflow: hidden;
+}
+
+.lil-gui input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.lil-gui input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
+}
+.cat summary {
+    color: #ccc;
+    padding: 8px 4px;
+    cursor: pointer;
+    border-radius: 8px;
+}
+.cat[open] summary { color: #fff; }
+
+.list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.list-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; }
+.list-item span { color: #ddd; font-size: 13px; }
+.hidden { display: none !important; }
