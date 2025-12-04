@@ -18,8 +18,10 @@ export default function Cutout() {
         ]);
         const html = await htmlRes.text();
         const filtersJs = filtersRes.ok ? await filtersRes.text() : '';
+        const shim = '<script>try{if(window.PIXI&&!window.PIXI.EventEmitter&&window.PIXI.utils&&window.PIXI.utils.EventEmitter){window.PIXI.EventEmitter=window.PIXI.utils.EventEmitter;}}catch(e){}</script>';
         const fixed = html
           .replace('<head>', '<head><base href="/cutout-tool/pixi-demo/filters/examples/" />')
+          .replace('<script src="https://pixijs.download/dev/pixi.min.js"></script>', `<script src="https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js"></script>${shim}`)
           .replace('https://pixijs.download/dev/pixi.min.js', 'https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js')
           .replace('<script src="../dist/pixi-filters.js"></script>', filtersJs ? `<script>${filtersJs}\n</script>` : '<script src="/cutout-tool/pixi-demo/filters/dist/pixi-filters.js"></script>');
         setSrcdoc(fixed);
