@@ -12,11 +12,16 @@ export default function Cutout() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch('/cutout-tool/pixi-demo/filters/examples/index.html');
-        const html = await res.text();
+        const [htmlRes, filtersRes] = await Promise.all([
+          fetch('/cutout-tool/pixi-demo/filters/examples/index.html'),
+          fetch('/cutout-tool/pixi-demo/filters/dist/pixi-filters.js'),
+        ]);
+        const html = await htmlRes.text();
+        const filtersJs = filtersRes.ok ? await filtersRes.text() : '';
         const fixed = html
           .replace('<head>', '<head><base href="/cutout-tool/pixi-demo/filters/examples/" />')
-          .replace('https://pixijs.download/dev/pixi.min.js', 'https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js');
+          .replace('https://pixijs.download/dev/pixi.min.js', 'https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js')
+          .replace('<script src="../dist/pixi-filters.js"></script>', filtersJs ? `<script>${filtersJs}\n</script>` : '<script src="/cutout-tool/pixi-demo/filters/dist/pixi-filters.js"></script>');
         setSrcdoc(fixed);
       } catch (e) {
         setSrcdoc(null);
