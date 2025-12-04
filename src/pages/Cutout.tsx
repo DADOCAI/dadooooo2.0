@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 export default function Cutout() {
   const [visible, setVisible] = useState(false);
@@ -8,13 +8,30 @@ export default function Cutout() {
     return () => { if (el) el.style.display = ''; };
   }, [visible]);
 
+  const [srcdoc, setSrcdoc] = useState<string | null>(null);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/cutout-tool/pixi-demo/filters/examples/index.html');
+        const html = await res.text();
+        const fixed = html
+          .replace('<head>', '<head><base href="/cutout-tool/pixi-demo/filters/examples/" />')
+          .replace('https://pixijs.download/dev/pixi.min.js', 'https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js');
+        setSrcdoc(fixed);
+      } catch (e) {
+        setSrcdoc(null);
+      }
+    };
+    load();
+  }, []);
+
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
-      <iframe
-        title="cutout-tool"
-        src="/cutout-tool/pixi-demo/filters/examples/index.html"
-        style={{ width: '100%', height: '100%', border: 'none' }}
-      />
+      {srcdoc ? (
+        <iframe title="cutout-tool" srcDoc={srcdoc} style={{ width: '100%', height: '100%', border: 'none' }} />
+      ) : (
+        <iframe title="cutout-tool" src="/cutout-tool/pixi-demo/filters/examples/index.html" style={{ width: '100%', height: '100%', border: 'none' }} />
+      )}
       <div
         style={{ position: 'fixed', bottom: 12, right: 12, zIndex: 10000, display: 'flex', gap: 8 }}
       >
