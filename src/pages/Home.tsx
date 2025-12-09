@@ -84,7 +84,7 @@ export function Home() {
                 link={tools[0].link}
                 inverted={true}
                 publicAccess={true}
-                toolLabel="抠图智能化工具"
+                toolLabel="D·Studio效果应用"
               />
             </div>
             <div className="lg:translate-x-[calc((100vw-1280px)/2+1280px/2-50%-20rem)] w-full max-w-[460px] relative group">
