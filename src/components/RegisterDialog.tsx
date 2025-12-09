@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { useAuth } from "../contexts/AuthContext";
 import logo from 'figma:asset/e5c375aeb9d5459e76d1f4b4579b4d2ffbb0055e.png';
+import { CaptchaDialog } from "./CaptchaDialog";
+import { canRegisterToday, incrementRegisterSuccess } from "../lib/registerLimit";
 
 export function RegisterDialog() {
   const { showRegisterDialog, setShowRegisterDialog, register, setShowLoginDialog, setPrefillEmail } = useAuth();
@@ -12,14 +14,20 @@ export function RegisterDialog() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   // 改为“邮箱 + 魔法链接登录”，不再使用 6 位验证码
+  // 新增：注册防机器人逻辑 — 前置态
+  const [honeypot, setHoneypot] = useState("");
+  const formRenderTimeRef = useRef<number>(Date.now());
+  const [showCaptcha, setShowCaptcha] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage("");
-    if (password !== confirmPassword) { setMessage("两次密码不一致"); return; }
+  // 新增：注册防机器人逻辑 — 验证码通过后执行真实注册
+  const onCaptchaVerified = async () => {
     const r = await register(email, password);
     try { setPrefillEmail(email); } catch {}
-    if (r.ok) { setMessage("验证链接已发送，请到邮箱点击链接完成注册"); return; }
+    if (r.ok) {
+      setMessage("验证链接已发送，请到邮箱点击链接完成注册");
+      try { incrementRegisterSuccess(); } catch {}
+      return;
+    }
     const raw = (r.error || "").toLowerCase();
     let zh = "发送失败";
     if (raw.includes("exist") || raw.includes("already") || raw.includes("duplicate") || raw.includes("registered")) {
@@ -30,6 +38,28 @@ export function RegisterDialog() {
       zh = "网络错误，请稍后重试";
     }
     setMessage(zh);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage("");
+    // 新增：注册防机器人逻辑 — 蜜罐字段
+    if ((honeypot || "").trim() !== "") {
+      console.log('Blocked by honeypot');
+      setMessage("请求异常，请稍后再试");
+      return;
+    }
+    // 新增：注册防机器人逻辑 — 简单时间防护（默认阈值 5 秒）
+    const dt = Date.now() - (formRenderTimeRef.current || Date.now());
+    if (dt < 5000) { setMessage("操作过快，请稍后再试"); return; }
+    if (password !== confirmPassword) { setMessage("两次密码不一致"); return; }
+    // 新增：注册防机器人逻辑 — 前端限流（每日≤3次）
+    if (!canRegisterToday()) {
+      setMessage("今天注册次数已达上限，请明天再试。如果有疑问请联系客服。");
+      return;
+    }
+    // 新增：注册防机器人逻辑 — 打开验证码弹窗；验证通过后才调用原注册
+    setShowCaptcha(true);
   };
 
   return (
@@ -56,6 +86,17 @@ export function RegisterDialog() {
 
           {/* 注册表单 */}
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 新增：注册防机器人逻辑 — 蜜罐隐藏字段 */}
+            <div style={{ position: 'absolute', left: -9999, opacity: 0, width: 0, height: 0 }} aria-hidden tabIndex={-1}>
+              <Label htmlFor="nickname-hidden" className="sr-only">昵称</Label>
+              <Input
+                id="nickname-hidden"
+                name="nickname_hidden"
+                value={honeypot}
+                onChange={(e) => setHoneypot(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="register-email" className="text-black">
                 邮箱
@@ -134,6 +175,8 @@ export function RegisterDialog() {
             </p>
           </form>
         </div>
+        {/* 新增：注册防机器人逻辑 — 图片验证码弹窗 */}
+        <CaptchaDialog open={showCaptcha} onOpenChange={setShowCaptcha} onVerified={onCaptchaVerified} />
       </DialogContent>
     </Dialog>
   );
