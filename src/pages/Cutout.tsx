@@ -1,12 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function Cutout() {
+  const navigate = useNavigate();
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const el = document.querySelector('header') as HTMLElement | null;
     if (el) el.style.display = visible ? '' : 'none';
     return () => { if (el) el.style.display = ''; };
   }, [visible]);
+
+  useEffect(() => {
+    const handler = () => { navigate('/', { replace: true }); };
+    window.addEventListener('popstate', handler);
+    return () => { window.removeEventListener('popstate', handler); };
+  }, [navigate]);
 
   const [srcdoc, setSrcdoc] = useState<string | null>(null);
   useEffect(() => {
